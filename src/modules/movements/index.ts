@@ -8,7 +8,7 @@ import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
 import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutionalTrips, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
 import { createMovementContingency, type ContingencyEntity } from './movementContingency.service.js';
-import { listActiveVisitorVisits, registerVisitorEntry, registerVisitorExit } from './visitorVisit.service.js';
+import { listActiveVisitorVisits, listAvailableVisitorBadges, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
 
 export const movementsModule = { key: 'movements', status: 'in_progress' } as const;
@@ -72,6 +72,17 @@ movementsRouter.post('/visitors/entry', async (req, res, next) => {
 
 movementsRouter.get('/visitors/active', async (req, res, next) => {
   try { res.json({ data: await listActiveVisitorVisits(typeof req.query.search === 'string' ? req.query.search : '') }); } catch (error) { next(error); }
+});
+
+movementsRouter.get('/visitors/identity', async (req, res, next) => {
+  try {
+    if (typeof req.query.identification !== 'string') throw new ApiError(400, 'Identificación requerida');
+    res.json({ data: await lookupVisitorByIdentification(req.query.identification) });
+  } catch (error) { next(error); }
+});
+
+movementsRouter.get('/visitors/badges/available', async (_req, res, next) => {
+  try { res.json({ data: await listAvailableVisitorBadges() }); } catch (error) { next(error); }
 });
 
 movementsRouter.post('/visitors/:id/exit', async (req, res, next) => {

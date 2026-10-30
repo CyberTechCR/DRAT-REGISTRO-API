@@ -72,6 +72,8 @@ describe('SICAF API', () => {
   it('protege el registro y la consulta de visitantes', async () => {
     expect((await request(app).post('/api/v1/movements/visitors/entry')).status).toBe(401);
     expect((await request(app).get('/api/v1/movements/visitors/active')).status).toBe(401);
+    expect((await request(app).get('/api/v1/movements/visitors/identity?identification=1')).status).toBe(401);
+    expect((await request(app).get('/api/v1/movements/visitors/badges/available')).status).toBe(401);
     expect((await request(app).post('/api/v1/movements/visitors/00000000-0000-0000-0000-000000000000/exit')).status).toBe(401);
   });
 

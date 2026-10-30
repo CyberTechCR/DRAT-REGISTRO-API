@@ -12,6 +12,10 @@ export type ActiveVisitorVisit = {
   entryAt: Date;
 };
 
+export type VisitorIdentity = { identification: string; name: string };
+
+const visitorBadgeCodes = Array.from({ length: 30 }, (_, index) => `VIS-${String(index + 1).padStart(3, '0')}`);
+
 function requiredText(value: unknown, field: string, maximum: number) {
   if (typeof value !== 'string' || value.trim().length < 2 || value.trim().length > maximum) {
     throw new ApiError(400, `${field} inválido`);
@@ -24,7 +28,10 @@ export async function registerVisitorEntry(input: { identification: string; name
   const name = requiredText(input.name, 'Nombre', 160);
   const reason = requiredText(input.reason, 'Motivo de visita', 300);
   const badgeCode = requiredText(input.badgeCode, 'Código de gafete', 40).toUpperCase();
+  if (!visitorBadgeCodes.includes(badgeCode)) throw new ApiError(400, 'Seleccione un gafete del catálogo autorizado');
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
+    const [occupiedBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM visitor_visits WHERE badge_code = :badgeCode AND exit_at IS NULL', { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction });
+    if (occupiedBadge) throw new ApiError(409, 'El gafete seleccionado ya se encuentra asignado');
     const [visitor] = await requireDatabase().query<{ id: string }>(
       `INSERT INTO visitors (identification, name) VALUES (:identification, :name)
        ON CONFLICT (identification) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
@@ -52,6 +59,24 @@ export async function listActiveVisitorVisits(search = '') {
      ORDER BY vv.entry_at DESC`,
     { replacements: { search: search.trim(), pattern: `%${search.trim()}%` }, type: QueryTypes.SELECT },
   );
+}
+
+export async function lookupVisitorByIdentification(identificationInput: string) {
+  const identification = requiredText(identificationInput, 'Identificación', 40).toUpperCase();
+  const [visitor] = await requireDatabase().query<VisitorIdentity>(
+    'SELECT identification, name FROM visitors WHERE identification = :identification',
+    { replacements: { identification }, type: QueryTypes.SELECT },
+  );
+  return visitor ?? null;
+}
+
+export async function listAvailableVisitorBadges() {
+  const active = await requireDatabase().query<{ badgeCode: string }>(
+    'SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE exit_at IS NULL',
+    { type: QueryTypes.SELECT },
+  );
+  const occupied = new Set(active.map((item) => item.badgeCode.toUpperCase()));
+  return visitorBadgeCodes.filter((code) => !occupied.has(code));
 }
 
 export async function registerVisitorExit(visitId: string, userId: string) {
