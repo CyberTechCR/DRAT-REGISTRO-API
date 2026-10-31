@@ -37,11 +37,8 @@ export async function updateNfcTag(id: string, input: { employeeId?: string | nu
   const tag = await getNfcTagModel().findByPk(id);
   if (!tag) throw new ApiError(404, 'TAG NFC no encontrado');
   const employeeId = input.employeeId === undefined ? tag.employeeId : input.employeeId;
-  if ((input.employeeId !== undefined && input.employeeId !== null) || input.active === true) {
-    if (!employeeId) throw new ApiError(409, 'No se puede activar un TAG sin funcionario asociado');
-    await requireActiveEmployee(employeeId);
-  }
-  const update = input.employeeId === null ? { ...input, active: false } : input;
+  if (employeeId && ((input.employeeId !== undefined && input.employeeId !== null) || input.active === true)) await requireActiveEmployee(employeeId);
+  const update = input.employeeId === null ? { ...input, active: true } : input;
   try { await tag.update(update); return withEmployee(tag); }
   catch (error) {
     if (error instanceof UniqueConstraintError) throw new ApiError(409, 'El funcionario ya tiene un TAG asociado');

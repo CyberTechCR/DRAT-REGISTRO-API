@@ -24,8 +24,8 @@ export async function registerVisitorVehicleEntry(input: { plate: string; occupa
     if (openVehicle) throw new ApiError(409, 'El vehículo visitante ya figura dentro del plantel');
     const visitIds: { id: string; role: 'CONDUCTOR' | 'OCUPANTE' }[] = [];
     for (const occupant of occupants) {
-      const badgeNumber = Number(occupant.badgeCode.replace('VIS-', ''));
-      if (!/^VIS-\d{3}$/.test(occupant.badgeCode) || badgeNumber < 1 || badgeNumber > 30) throw new ApiError(400, `Gafete no autorizado para ${occupant.name}`);
+      const [validBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM nfc_tags WHERE code = :badgeCode AND active = TRUE AND employee_id IS NULL', { replacements: { badgeCode: occupant.badgeCode }, type: QueryTypes.SELECT, transaction });
+      if (!validBadge) throw new ApiError(409, `El TAG de ${occupant.name} no está activo o disponible`);
       const [occupiedBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM visitor_visits WHERE badge_code = :badgeCode AND exit_at IS NULL', { replacements: { badgeCode: occupant.badgeCode }, type: QueryTypes.SELECT, transaction });
       if (occupiedBadge) throw new ApiError(409, `El gafete ${occupant.badgeCode} ya está asignado`);
       const [visitor] = await requireDatabase().query<{ id: string }>(`INSERT INTO visitors (identification, name) VALUES (:identification, :name) ON CONFLICT (identification) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW() RETURNING id`, { replacements: occupant, type: QueryTypes.SELECT, transaction });

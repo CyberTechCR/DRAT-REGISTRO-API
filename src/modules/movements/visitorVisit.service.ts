@@ -10,11 +10,10 @@ export type ActiveVisitorVisit = {
   reason: string;
   badgeCode: string;
   entryAt: Date;
+  badgeReturnPending?: boolean;
 };
 
 export type VisitorIdentity = { identification: string; name: string };
-
-const visitorBadgeCodes = Array.from({ length: 30 }, (_, index) => `VIS-${String(index + 1).padStart(3, '0')}`);
 
 function requiredText(value: unknown, field: string, maximum: number) {
   if (typeof value !== 'string' || value.trim().length < 2 || value.trim().length > maximum) {
@@ -28,8 +27,9 @@ export async function registerVisitorEntry(input: { identification: string; name
   const name = requiredText(input.name, 'Nombre', 160);
   const reason = requiredText(input.reason, 'Motivo de visita', 300);
   const badgeCode = requiredText(input.badgeCode, 'Código de gafete', 40).toUpperCase();
-  if (!visitorBadgeCodes.includes(badgeCode)) throw new ApiError(400, 'Seleccione un gafete del catálogo autorizado');
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
+    const [validBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM nfc_tags WHERE code = :badgeCode AND active = TRUE AND employee_id IS NULL', { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction });
+    if (!validBadge) throw new ApiError(409, 'El TAG NFC no está activo o está asignado a un funcionario');
     const [occupiedBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM visitor_visits WHERE badge_code = :badgeCode AND exit_at IS NULL', { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction });
     if (occupiedBadge) throw new ApiError(409, 'El gafete seleccionado ya se encuentra asignado');
     const [visitor] = await requireDatabase().query<{ id: string }>(
@@ -71,21 +71,32 @@ export async function lookupVisitorByIdentification(identificationInput: string)
 }
 
 export async function listAvailableVisitorBadges() {
-  const active = await requireDatabase().query<{ badgeCode: string }>(
-    'SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE exit_at IS NULL',
-    { type: QueryTypes.SELECT },
-  );
-  const occupied = new Set(active.map((item) => item.badgeCode.toUpperCase()));
-  return visitorBadgeCodes.filter((code) => !occupied.has(code));
+  const rows = await requireDatabase().query<{ badgeCode: string }>(`SELECT nt.code AS "badgeCode" FROM nfc_tags nt WHERE nt.active = TRUE AND nt.employee_id IS NULL AND NOT EXISTS (SELECT 1 FROM visitor_visits vv WHERE vv.badge_code = nt.code AND (vv.exit_at IS NULL OR vv.badge_return_pending = TRUE)) ORDER BY nt.code`, { type: QueryTypes.SELECT });
+  return rows.map((item) => item.badgeCode);
 }
 
-export async function registerVisitorExit(visitId: string, userId: string) {
+export async function registerVisitorExit(visitId: string, userId: string, returnedBadgeCode?: string) {
+  const [visit] = await requireDatabase().query<{ badgeCode: string }>('SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE id = :visitId AND exit_at IS NULL', { replacements: { visitId }, type: QueryTypes.SELECT });
+  if (!visit) throw new ApiError(409, 'La visita no está activa o ya registró su salida');
+  const returned = typeof returnedBadgeCode === 'string' && returnedBadgeCode.trim().length > 0;
+  if (returned && visit.badgeCode !== returnedBadgeCode.trim().toUpperCase()) throw new ApiError(409, 'El TAG leído no corresponde al gafete asignado a esta persona');
   const [result] = await requireDatabase().query<ActiveVisitorVisit>(
-    `UPDATE visitor_visits vv SET exit_at = NOW(), exit_confirmed_by_user_id = :userId, updated_at = NOW()
+    `UPDATE visitor_visits vv SET exit_at = NOW(), exit_confirmed_by_user_id = :userId, badge_returned_at = CASE WHEN :returned THEN NOW() ELSE NULL END, badge_return_pending = NOT :returned, updated_at = NOW()
      FROM visitors v WHERE vv.id = :visitId AND vv.visitor_id = v.id AND vv.exit_at IS NULL
-     RETURNING vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt"`,
-    { replacements: { visitId, userId }, type: QueryTypes.SELECT },
+     RETURNING vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt", vv.badge_return_pending AS "badgeReturnPending"`,
+    { replacements: { visitId, userId, returned }, type: QueryTypes.SELECT },
   );
   if (!result) throw new ApiError(409, 'La visita no está activa o ya registró su salida');
+  return result;
+}
+
+export async function listPendingBadgeReturns() {
+  return requireDatabase().query<ActiveVisitorVisit>(`SELECT vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt", TRUE AS "badgeReturnPending" FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id WHERE vv.badge_return_pending = TRUE ORDER BY vv.exit_at DESC`, { type: QueryTypes.SELECT });
+}
+
+export async function resolvePendingBadgeReturn(visitId: string, badgeCodeInput: string) {
+  const badgeCode = requiredText(badgeCodeInput, 'Código de gafete', 80).toUpperCase();
+  const [result] = await requireDatabase().query<ActiveVisitorVisit>(`UPDATE visitor_visits vv SET badge_returned_at = NOW(), badge_return_pending = FALSE, updated_at = NOW() FROM visitors v WHERE vv.id = :visitId AND vv.visitor_id = v.id AND vv.badge_return_pending = TRUE AND vv.badge_code = :badgeCode RETURNING vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt", FALSE AS "badgeReturnPending"`, { replacements: { visitId, badgeCode }, type: QueryTypes.SELECT });
+  if (!result) throw new ApiError(409, 'El TAG leído no corresponde a la devolución pendiente');
   return result;
 }

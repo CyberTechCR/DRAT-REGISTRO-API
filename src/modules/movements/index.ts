@@ -8,7 +8,7 @@ import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
 import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutionalTrips, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
 import { createMovementContingency, type ContingencyEntity } from './movementContingency.service.js';
-import { listActiveVisitorVisits, listAvailableVisitorBadges, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit } from './visitorVisit.service.js';
+import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeReturns, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit, resolvePendingBadgeReturn } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
 import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
 
@@ -86,12 +86,20 @@ movementsRouter.get('/visitors/badges/available', async (_req, res, next) => {
   try { res.json({ data: await listAvailableVisitorBadges() }); } catch (error) { next(error); }
 });
 
+movementsRouter.get('/visitors/badges/pending', async (_req, res, next) => {
+  try { res.json({ data: await listPendingBadgeReturns() }); } catch (error) { next(error); }
+});
+
 movementsRouter.post('/visitors/:id/exit', async (req, res, next) => {
   try {
     const auth = typeof req.auth === 'object' ? req.auth : undefined;
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
-    res.json({ data: await registerVisitorExit(req.params.id, auth.sub) });
+    res.json({ data: await registerVisitorExit(req.params.id, auth.sub, typeof req.body?.badgeCode === 'string' ? req.body.badgeCode : undefined) });
   } catch (error) { next(error); }
+});
+
+movementsRouter.post('/visitors/:id/badge-return', async (req, res, next) => {
+  try { if (typeof req.body?.badgeCode !== 'string') throw new ApiError(400, 'Código NFC requerido'); res.json({ data: await resolvePendingBadgeReturn(req.params.id, req.body.badgeCode) }); } catch (error) { next(error); }
 });
 
 movementsRouter.post('/visitor-vehicles/entry', async (req, res, next) => {
