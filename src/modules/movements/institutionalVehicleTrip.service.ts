@@ -98,13 +98,22 @@ export async function createInstitutionalReturn(input: { soinNumber: string; mil
 export async function listInstitutionalTrips() { const trips = await getInstitutionalVehicleTripModel().findAll({ order: [['departureAt', 'DESC']] }); return Promise.all(trips.map((trip) => detail(trip))); }
 
 export async function listPendingInstitutionalAssetReviews() {
-  return requireDatabase().query(`SELECT ivt.id, ivt.soin_number AS "soinNumber", iv.plate, iv.brand, iv.model, ivt.return_at AS "returnAt", u.name AS "operatorName", COALESCE(jsonb_agg(jsonb_build_object('id', a.id, 'description', a.description, 'quantity', a.quantity, 'returnedQuantity', a.returned_quantity, 'identifier', a.identifier, 'returnObservation', a.return_observation) ORDER BY a.created_at) FILTER (WHERE a.returned_quantity < a.quantity), '[]'::jsonb) AS assets FROM institutional_vehicle_trips ivt JOIN institutional_vehicles iv ON iv.id=ivt.vehicle_id JOIN users u ON u.id=ivt.return_confirmed_by_user_id LEFT JOIN institutional_vehicle_trip_assets a ON a.trip_id=ivt.id WHERE ivt.asset_review_status='PENDIENTE' GROUP BY ivt.id,iv.plate,iv.brand,iv.model,u.name ORDER BY ivt.return_at DESC`, { type: QueryTypes.SELECT });
+  return requireDatabase().query(`SELECT ivt.id, ivt.soin_number AS "soinNumber", iv.plate, iv.brand, iv.model, ivt.return_at AS "returnAt", u.name AS "operatorName", COALESCE(jsonb_agg(jsonb_build_object('id', a.id, 'description', a.description, 'quantity', a.quantity, 'returnedQuantity', a.returned_quantity, 'identifier', a.identifier, 'returnObservation', a.return_observation) ORDER BY a.created_at) FILTER (WHERE a.returned_quantity < a.quantity), '[]'::jsonb) AS assets, latest.decision AS "lastDecision", latest.justification AS "lastJustification", latest.decided_at AS "lastDecisionAt", reviewer.name AS "lastReviewedBy" FROM institutional_vehicle_trips ivt JOIN institutional_vehicles iv ON iv.id=ivt.vehicle_id JOIN users u ON u.id=ivt.return_confirmed_by_user_id LEFT JOIN institutional_vehicle_trip_assets a ON a.trip_id=ivt.id LEFT JOIN LATERAL (SELECT decision,justification,decided_at,decided_by_user_id FROM institutional_asset_review_actions WHERE trip_id=ivt.id ORDER BY decided_at DESC LIMIT 1) latest ON TRUE LEFT JOIN users reviewer ON reviewer.id=latest.decided_by_user_id WHERE ivt.asset_review_status='PENDIENTE' GROUP BY ivt.id,iv.plate,iv.brand,iv.model,u.name,latest.decision,latest.justification,latest.decided_at,reviewer.name ORDER BY ivt.return_at DESC`, { type: QueryTypes.SELECT });
+}
+
+export async function decideInstitutionalAssetReview(id: string, decisionInput: unknown, justificationInput: unknown, userId: string) {
+  if (decisionInput !== 'APROBADO' && decisionInput !== 'MANTENER_PENDIENTE') throw new ApiError(400, 'Decisión de revisión inválida');
+  const justification = optionalText(justificationInput, 'Justificación', 500);
+  if (!justification || justification.length < 2) throw new ApiError(400, 'Justificación requerida');
+  return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
+    const [trip] = await requireDatabase().query<{ id: string }>('SELECT id FROM institutional_vehicle_trips WHERE id=:id AND asset_review_status=\'PENDIENTE\' FOR UPDATE', { replacements: { id }, type: QueryTypes.SELECT, transaction });
+    if (!trip) throw new ApiError(409, 'La revisión ya fue resuelta o no existe');
+    const [action] = await requireDatabase().query(`INSERT INTO institutional_asset_review_actions(trip_id,decision,justification,decided_by_user_id) VALUES(:id,:decision,:justification,:userId) RETURNING id,decision,justification,decided_at AS "decidedAt"`, { replacements: { id, decision: decisionInput, justification, userId }, type: QueryTypes.SELECT, transaction });
+    if (decisionInput === 'APROBADO') await requireDatabase().query(`UPDATE institutional_vehicle_trips SET asset_review_status='RESUELTO',asset_review_note=:justification,asset_reviewed_by_user_id=:userId,asset_reviewed_at=NOW(),updated_at=NOW() WHERE id=:id`, { replacements: { id, justification, userId }, type: QueryTypes.UPDATE, transaction });
+    return action;
+  });
 }
 
 export async function resolveInstitutionalAssetReview(id: string, noteInput: unknown, userId: string) {
-  const note = optionalText(noteInput, 'Nota de revisión', 500);
-  if (!note || note.length < 2) throw new ApiError(400, 'Nota de revisión requerida');
-  const [result] = await requireDatabase().query(`UPDATE institutional_vehicle_trips SET asset_review_status='RESUELTO',asset_review_note=:note,asset_reviewed_by_user_id=:userId,asset_reviewed_at=NOW(),updated_at=NOW() WHERE id=:id AND asset_review_status='PENDIENTE' RETURNING id`, { replacements: { id, note, userId }, type: QueryTypes.SELECT });
-  if (!result) throw new ApiError(409, 'La revisión ya fue resuelta o no existe');
-  return result;
+  return decideInstitutionalAssetReview(id, 'APROBADO', noteInput, userId);
 }
