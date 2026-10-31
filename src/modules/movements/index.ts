@@ -8,7 +8,7 @@ import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
 import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutionalTrips, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
 import { createMovementContingency, type ContingencyEntity } from './movementContingency.service.js';
-import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeReturns, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit, resolveLegacyBadgeReturn, resolvePendingBadgeReturn } from './visitorVisit.service.js';
+import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeReturns, listPendingVisitorBadgeContingencies, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorEntryWithoutBadge, registerVisitorExit, resolveLegacyBadgeReturn, resolvePendingBadgeReturn, resolveVisitorBadgeContingency } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
 import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
 import { createPermanentProviderMovement, resolvePermanentProviderMovement } from './permanentProviderMovement.service.js';
@@ -74,6 +74,10 @@ movementsRouter.post('/visitors/entry', async (req, res, next) => {
     res.status(201).json({ data: await registerVisitorEntry({ ...req.body, userId: auth.sub }) });
   } catch (error) { next(error); }
 });
+
+movementsRouter.post('/visitors/entry/badge-contingency',async(req,res,next)=>{try{const auth=typeof req.auth==='object'?req.auth:undefined;if(typeof auth?.sub!=='string')throw new ApiError(401,'No autorizado');res.status(201).json({data:await registerVisitorEntryWithoutBadge({...req.body,userId:auth.sub})});}catch(error){next(error);}});
+movementsRouter.get('/visitors/badge-contingencies/pending',authorize('ADMINISTRADOR'),async(_req,res,next)=>{try{res.json({data:await listPendingVisitorBadgeContingencies()});}catch(error){next(error);}});
+movementsRouter.post('/visitors/badge-contingencies/:id/resolve',authorize('ADMINISTRADOR'),async(req,res,next)=>{try{const auth=typeof req.auth==='object'?req.auth:undefined;const id=req.params.id;if(typeof auth?.sub!=='string')throw new ApiError(401,'No autorizado');if(typeof id!=='string')throw new ApiError(400,'Contingencia inválida');res.json({data:await resolveVisitorBadgeContingency(id,req.body?.note,auth.sub)});}catch(error){next(error);}});
 
 movementsRouter.get('/visitors/active', async (req, res, next) => {
   try { res.json({ data: await listActiveVisitorVisits(typeof req.query.search === 'string' ? req.query.search : '') }); } catch (error) { next(error); }

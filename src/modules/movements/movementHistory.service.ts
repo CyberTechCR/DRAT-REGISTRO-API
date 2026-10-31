@@ -73,12 +73,12 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
       UNION ALL
       SELECT CONCAT(vv.id, '-INGRESO'), 'VISITANTE', 'INGRESO', v.name, v.identification,
              vv.entry_at, 'REGISTRO_VISITANTE', u.name, u.email,
-             jsonb_build_object('gafete', vv.badge_code, 'motivo', vv.reason)
+             jsonb_build_object('gafete', vv.badge_code, 'motivo', vv.reason, 'contingenciaSinGafete', vv.badge_contingency, 'observacionContingencia', vv.contingency_observation, 'revisionAdministrativa', vv.administrative_review_status)
       FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id JOIN users u ON u.id = vv.entry_confirmed_by_user_id
       UNION ALL
       SELECT CONCAT(vv.id, '-SALIDA'), 'VISITANTE', 'SALIDA', v.name, v.identification,
              vv.exit_at, 'REGISTRO_VISITANTE', u.name, u.email,
-             jsonb_build_object('gafete', vv.badge_code, 'motivo', vv.reason)
+             jsonb_build_object('gafete', vv.badge_code, 'motivo', vv.reason, 'contingenciaSinGafete', vv.badge_contingency, 'observacionContingencia', vv.contingency_observation, 'revisionAdministrativa', vv.administrative_review_status)
       FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id JOIN users u ON u.id = vv.exit_confirmed_by_user_id
       WHERE vv.exit_at IS NOT NULL
       UNION ALL

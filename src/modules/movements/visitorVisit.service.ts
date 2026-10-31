@@ -8,7 +8,7 @@ export type ActiveVisitorVisit = {
   identification: string;
   name: string;
   reason: string;
-  badgeCode: string;
+  badgeCode: string | null;
   entryAt: Date;
   badgeReturnPending?: boolean;
 };
@@ -28,8 +28,14 @@ export async function registerVisitorEntry(input: { identification: string; name
   const reason = requiredText(input.reason, 'Motivo de visita', 300);
   const badgeCode = requiredText(input.badgeCode, 'Código de gafete', 40).toUpperCase();
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
-    const [validBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM nfc_tags WHERE code = :badgeCode AND active = TRUE AND employee_id IS NULL', { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction });
-    if (!validBadge) throw new ApiError(409, 'El TAG NFC no está activo o está asignado a un funcionario');
+    const [validBadge] = await requireDatabase().query<{ id: string }>(
+      `SELECT nt.id FROM nfc_tags nt
+       WHERE nt.code = :badgeCode AND nt.active = TRUE AND nt.condition = 'OPERATIVO'
+         AND nt.purpose = 'VISITANTE' AND nt.employee_id IS NULL
+         AND NOT EXISTS (SELECT 1 FROM permanent_provider_tags ppt WHERE ppt.nfc_tag_id = nt.id)`,
+      { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction },
+    );
+    if (!validBadge) throw new ApiError(409, 'El TAG NFC no está activo, disponible o registrado como gafete de visitante');
     const [occupiedBadge] = await requireDatabase().query<{ id: string }>('SELECT id FROM visitor_visits WHERE badge_code = :badgeCode AND exit_at IS NULL', { replacements: { badgeCode }, type: QueryTypes.SELECT, transaction });
     if (occupiedBadge) throw new ApiError(409, 'El gafete seleccionado ya se encuentra asignado');
     const [visitor] = await requireDatabase().query<{ id: string }>(
@@ -50,6 +56,20 @@ export async function registerVisitorEntry(input: { identification: string; name
     return visit;
   });
 }
+
+export async function registerVisitorEntryWithoutBadge(input:{identification:string;name:string;reason:string;observation:string;confirmed:boolean;userId:string}){
+  if(input.confirmed!==true)throw new ApiError(400,'Debe confirmar explícitamente la contingencia sin gafete');
+  const identification=requiredText(input.identification,'Identificación',40).toUpperCase();const name=requiredText(input.name,'Nombre',160);const reason=requiredText(input.reason,'Motivo de visita',300);const observation=requiredText(input.observation,'Observación de contingencia',500);if(observation.length<10)throw new ApiError(400,'La observación debe tener al menos 10 caracteres');
+  return requireDatabase().transaction({isolationLevel:Transaction.ISOLATION_LEVELS.SERIALIZABLE},async(transaction)=>{
+    const available=await requireDatabase().query<{id:string}>(`SELECT nt.id FROM nfc_tags nt WHERE nt.active=TRUE AND nt.condition='OPERATIVO' AND nt.purpose='VISITANTE' AND nt.employee_id IS NULL AND NOT EXISTS(SELECT 1 FROM permanent_provider_tags ppt WHERE ppt.nfc_tag_id=nt.id) AND NOT EXISTS(SELECT 1 FROM visitor_visits vv WHERE vv.badge_code=nt.code AND (vv.exit_at IS NULL OR vv.badge_return_pending=TRUE)) LIMIT 1`,{type:QueryTypes.SELECT,transaction});if(available.length)throw new ApiError(409,'Ya existe un gafete disponible; utilice el flujo normal');
+    const [visitor]=await requireDatabase().query<{id:string}>(`INSERT INTO visitors(identification,name) VALUES(:identification,:name) ON CONFLICT(identification) DO UPDATE SET name=EXCLUDED.name,updated_at=NOW() RETURNING id`,{replacements:{identification,name},type:QueryTypes.SELECT,transaction});if(!visitor)throw new ApiError(500,'No fue posible registrar la persona visitante');
+    const [open]=await requireDatabase().query<{id:string}>('SELECT id FROM visitor_visits WHERE visitor_id=:visitorId AND exit_at IS NULL',{replacements:{visitorId:visitor.id},type:QueryTypes.SELECT,transaction});if(open)throw new ApiError(409,'La persona visitante ya figura dentro del plantel');
+    const [visit]=await requireDatabase().query<ActiveVisitorVisit>(`INSERT INTO visitor_visits(visitor_id,reason,badge_code,badge_contingency,contingency_observation,administrative_review_status,entry_confirmed_by_user_id) VALUES(:visitorId,:reason,NULL,TRUE,:observation,'PENDIENTE',:userId) RETURNING id,:identification AS identification,:name AS name,reason,NULL::text AS "badgeCode",entry_at AS "entryAt"`,{replacements:{visitorId:visitor.id,reason,observation,userId:input.userId,identification,name},type:QueryTypes.SELECT,transaction});return visit;
+  });
+}
+
+export async function listPendingVisitorBadgeContingencies(){return requireDatabase().query(`SELECT vv.id,v.identification,v.name,vv.reason,vv.contingency_observation AS observation,vv.entry_at AS "entryAt",u.name AS "operatorName" FROM visitor_visits vv JOIN visitors v ON v.id=vv.visitor_id JOIN users u ON u.id=vv.entry_confirmed_by_user_id WHERE vv.badge_contingency=TRUE AND vv.administrative_review_status='PENDIENTE' ORDER BY vv.entry_at DESC`,{type:QueryTypes.SELECT});}
+export async function resolveVisitorBadgeContingency(id:string,noteInput:unknown,userId:string){const note=requiredText(noteInput,'Nota de revisión',500);const [row]=await requireDatabase().query(`UPDATE visitor_visits SET administrative_review_status='RESUELTO',administrative_review_note=:note,administrative_reviewed_by_user_id=:userId,administrative_reviewed_at=NOW(),updated_at=NOW() WHERE id=:id AND badge_contingency=TRUE AND administrative_review_status='PENDIENTE' RETURNING id`,{replacements:{id,note,userId},type:QueryTypes.SELECT});if(!row)throw new ApiError(409,'La contingencia ya fue revisada o no existe');return row;}
 
 export async function listActiveVisitorVisits(search = '') {
   return requireDatabase().query<ActiveVisitorVisit>(
@@ -76,15 +96,16 @@ export async function listAvailableVisitorBadges() {
 }
 
 export async function registerVisitorExit(visitId: string, userId: string, returnedBadgeCode?: string) {
-  const [visit] = await requireDatabase().query<{ badgeCode: string }>('SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE id = :visitId AND exit_at IS NULL', { replacements: { visitId }, type: QueryTypes.SELECT });
+  const [visit] = await requireDatabase().query<{ badgeCode: string | null }>('SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE id = :visitId AND exit_at IS NULL', { replacements: { visitId }, type: QueryTypes.SELECT });
   if (!visit) throw new ApiError(409, 'La visita no está activa o ya registró su salida');
   const returned = typeof returnedBadgeCode === 'string' && returnedBadgeCode.trim().length > 0;
   if (returned && visit.badgeCode !== returnedBadgeCode.trim().toUpperCase()) throw new ApiError(409, 'El TAG leído no corresponde al gafete asignado a esta persona');
+  if(!visit.badgeCode&&returned)throw new ApiError(409,'Esta visita ingresó mediante contingencia y no tiene gafete asignado');
   const [result] = await requireDatabase().query<ActiveVisitorVisit>(
-    `UPDATE visitor_visits vv SET exit_at = NOW(), exit_confirmed_by_user_id = :userId, badge_returned_at = CASE WHEN :returned THEN NOW() ELSE NULL END, badge_return_pending = NOT :returned, updated_at = NOW()
+    `UPDATE visitor_visits vv SET exit_at = NOW(), exit_confirmed_by_user_id = :userId, badge_returned_at = CASE WHEN vv.badge_code IS NOT NULL AND :returned THEN NOW() ELSE NULL END, badge_return_pending = vv.badge_code IS NOT NULL AND NOT :returned, updated_at = NOW()
      FROM visitors v WHERE vv.id = :visitId AND vv.visitor_id = v.id AND vv.exit_at IS NULL
      RETURNING vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt", vv.badge_return_pending AS "badgeReturnPending"`,
-    { replacements: { visitId, userId, returned }, type: QueryTypes.SELECT },
+    { replacements: { visitId, userId, returned:visit.badgeCode?returned:true }, type: QueryTypes.SELECT },
   );
   if (!result) throw new ApiError(409, 'La visita no está activa o ya registró su salida');
   return result;
