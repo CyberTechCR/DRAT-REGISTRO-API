@@ -100,3 +100,13 @@ export async function resolvePendingBadgeReturn(visitId: string, badgeCodeInput:
   if (!result) throw new ApiError(409, 'El TAG leído no corresponde a la devolución pendiente');
   return result;
 }
+
+export async function resolveLegacyBadgeReturn(visitId: string, userId: string) {
+  const [pending] = await requireDatabase().query<{ badgeCode: string }>(`SELECT badge_code AS "badgeCode" FROM visitor_visits WHERE id = :visitId AND badge_return_pending = TRUE`, { replacements: { visitId }, type: QueryTypes.SELECT });
+  if (!pending) throw new ApiError(409, 'La alerta ya no está pendiente');
+  const [physicalTag] = await requireDatabase().query<{ id: string }>('SELECT id FROM nfc_tags WHERE code = :badgeCode', { replacements: { badgeCode: pending.badgeCode }, type: QueryTypes.SELECT });
+  if (physicalTag) throw new ApiError(409, 'Este gafete sí existe físicamente y debe devolverse mediante lectura NFC');
+  const [result] = await requireDatabase().query<ActiveVisitorVisit>(`UPDATE visitor_visits vv SET badge_return_pending = FALSE, badge_return_resolution = 'Registro legado sin TAG físico; resolución administrativa', badge_return_resolved_by_user_id = :userId, updated_at = NOW() FROM visitors v WHERE vv.id = :visitId AND vv.visitor_id = v.id AND vv.badge_return_pending = TRUE RETURNING vv.id, v.identification, v.name, vv.reason, vv.badge_code AS "badgeCode", vv.entry_at AS "entryAt", FALSE AS "badgeReturnPending"`, { replacements: { visitId, userId }, type: QueryTypes.SELECT });
+  if (!result) throw new ApiError(409, 'La alerta ya no está pendiente');
+  return result;
+}
