@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { ApiError } from '../../errors/ApiError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
-import { createManualMovement, createNfcMovement, getCurrentPresenceCount, getEmergencyPresence, listPendingManualMovementReviews, resolveManualMovement, resolveManualMovementReview, resolveNfcMovement } from './employeeMovement.service.js';
+import { createManualMovement, createNfcMovement, decideManualMovementReview, getCurrentPresenceCount, getEmergencyPresence, listPendingManualMovementReviews, resolveManualMovement, resolveManualMovementReview, resolveNfcMovement } from './employeeMovement.service.js';
 import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
 import { createInstitutionalDeparture, createInstitutionalReturn, decideInstitutionalAssetReview, listInstitutionalTrips, listPendingInstitutionalAssetReviews, resolveInstitutionalAssetReview, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
@@ -56,6 +56,9 @@ movementsRouter.get('/employees/manual/reviews/pending', authorize('ADMINISTRADO
 });
 movementsRouter.post('/employees/manual/reviews/:id/resolve', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try { const auth = typeof req.auth === 'object' ? req.auth : undefined; const id = req.params.id; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof id !== 'string') throw new ApiError(400, 'Revisión inválida'); res.json({ data: await resolveManualMovementReview(id, req.body?.note, auth.sub) }); } catch (error) { next(error); }
+});
+movementsRouter.post('/employees/manual/reviews/:id/decision', authorize('ADMINISTRADOR'), async (req, res, next) => {
+  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; const id = req.params.id; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof id !== 'string') throw new ApiError(400, 'Revisión inválida'); res.json({ data: await decideManualMovementReview(id, req.body?.decision, req.body?.note, auth.sub) }); } catch (error) { next(error); }
 });
 
 movementsRouter.get('/employees/presence/count', async (_req, res, next) => {

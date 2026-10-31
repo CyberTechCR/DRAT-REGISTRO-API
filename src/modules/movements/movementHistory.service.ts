@@ -40,20 +40,22 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
       SELECT em.id::text AS id, 'FUNCIONARIO'::text AS type, em.movement_type::text AS state,
              e.name AS subject, e.identification AS identifier, em.occurred_at AS "occurredAt",
              em.source AS source, u.name AS "operatorName", u.email AS "operatorEmail",
-             jsonb_build_object('departamento', e.department, 'puesto', e.position, 'tag', nt.code, 'motivoManual', mmr.reason, 'revisionAdministrativa', mmr.status, 'notaRevision', mmr.review_note) AS details
+             jsonb_build_object('departamento', e.department, 'puesto', e.position, 'tag', nt.code, 'motivoManual', mmr.reason, 'decisionRevision', mmr.decision, 'notaRevision', mmr.review_note, 'revisadoPor', reviewer.name, 'fechaRevision', mmr.reviewed_at) AS details
       FROM employee_movements em JOIN employees e ON e.id = em.employee_id
-      JOIN users u ON u.id = em.confirmed_by_user_id LEFT JOIN nfc_tags nt ON nt.id = em.nfc_tag_id LEFT JOIN manual_movement_reviews mmr ON mmr.employee_movement_id=em.id
+      JOIN users u ON u.id = em.confirmed_by_user_id LEFT JOIN nfc_tags nt ON nt.id = em.nfc_tag_id LEFT JOIN manual_movement_reviews mmr ON mmr.employee_movement_id=em.id LEFT JOIN users reviewer ON reviewer.id=mmr.reviewed_by_user_id
       UNION ALL
       SELECT pvm.id::text, 'VEHICULO_PARTICULAR', pvm.movement_type::text,
              CONCAT(pv.brand, ' ', pv.model), pv.plate, pvm.occurred_at, pvm.source,
              u.name, u.email,
              jsonb_build_object('color', pv.color, 'conductorFuncionario', de.name, 'conductorVisitante', vi.name,
                'autorizacionPropietario', pvm.owner_authorization_confirmed, 'observacion', pvm.authorization_note,
-               'motivoExcepcion', mc.reason, 'autorizadoPor', mc.authorized_by_reference, 'observacionesExcepcion', mc.observations)
+               'motivoExcepcion', mc.reason, 'autorizadoPor', mc.authorized_by_reference, 'observacionesExcepcion', mc.observations,
+               'motivoManual', mmrv.reason, 'decisionRevision', mmrv.decision, 'notaRevision', mmrv.review_note, 'revisadoPor', reviewerv.name, 'fechaRevision', mmrv.reviewed_at)
       FROM private_vehicle_movements pvm JOIN private_vehicles pv ON pv.id = pvm.vehicle_id
       JOIN users u ON u.id = pvm.confirmed_by_user_id LEFT JOIN employees de ON de.id = pvm.driver_employee_id
       LEFT JOIN visitor_visits vv ON vv.id = pvm.driver_visitor_visit_id LEFT JOIN visitors vi ON vi.id = vv.visitor_id
       LEFT JOIN movement_contingencies mc ON mc.created_movement_id=pvm.id AND mc.entity_type='VEHICULO_PARTICULAR'
+      LEFT JOIN manual_movement_reviews mmrv ON mmrv.private_vehicle_movement_id=pvm.id LEFT JOIN users reviewerv ON reviewerv.id=mmrv.reviewed_by_user_id
       UNION ALL
       SELECT CONCAT(ivt.id, '-SALIDA'), 'VEHICULO_INSTITUCIONAL', 'SALIDA',
              CONCAT(iv.brand, ' ', iv.model), iv.plate, ivt.departure_at, 'BOLETA_SOIN',

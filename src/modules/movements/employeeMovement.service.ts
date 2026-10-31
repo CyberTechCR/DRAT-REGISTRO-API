@@ -101,8 +101,13 @@ export async function listPendingManualMovementReviews() {
 }
 
 export async function resolveManualMovementReview(id: string, noteInput: unknown, userId: string) {
+  return decideManualMovementReview(id, 'APROBADO', noteInput, userId);
+}
+
+export async function decideManualMovementReview(id: string, decisionInput: unknown, noteInput: unknown, userId: string) {
+  if (decisionInput !== 'APROBADO' && decisionInput !== 'RECHAZADO') throw new ApiError(400, 'Decisión inválida');
   if (typeof noteInput !== 'string' || noteInput.trim().length < 2 || noteInput.trim().length > 500) throw new ApiError(400, 'Nota de revisión requerida');
-  const [result] = await requireDatabase().query(`UPDATE manual_movement_reviews SET status='RESUELTO',review_note=:note,reviewed_by_user_id=:userId,reviewed_at=NOW() WHERE id=:id AND status='PENDIENTE' RETURNING id`, { replacements: { id, note: noteInput.trim(), userId }, type: QueryTypes.SELECT });
+  const [result] = await requireDatabase().query(`UPDATE manual_movement_reviews SET status=:decision,decision=:decision,review_note=:note,reviewed_by_user_id=:userId,reviewed_at=NOW() WHERE id=:id AND status='PENDIENTE' RETURNING id,status AS decision,reviewed_at AS "reviewedAt"`, { replacements: { id, decision: decisionInput, note: noteInput.trim(), userId }, type: QueryTypes.SELECT });
   if (!result) throw new ApiError(409, 'La revisión ya fue resuelta o no existe');
   return result;
 }
