@@ -48,10 +48,12 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
              CONCAT(pv.brand, ' ', pv.model), pv.plate, pvm.occurred_at, pvm.source,
              u.name, u.email,
              jsonb_build_object('color', pv.color, 'conductorFuncionario', de.name, 'conductorVisitante', vi.name,
-               'autorizacionPropietario', pvm.owner_authorization_confirmed, 'observacion', pvm.authorization_note)
+               'autorizacionPropietario', pvm.owner_authorization_confirmed, 'observacion', pvm.authorization_note,
+               'motivoExcepcion', mc.reason, 'autorizadoPor', mc.authorized_by_reference, 'observacionesExcepcion', mc.observations)
       FROM private_vehicle_movements pvm JOIN private_vehicles pv ON pv.id = pvm.vehicle_id
       JOIN users u ON u.id = pvm.confirmed_by_user_id LEFT JOIN employees de ON de.id = pvm.driver_employee_id
       LEFT JOIN visitor_visits vv ON vv.id = pvm.driver_visitor_visit_id LEFT JOIN visitors vi ON vi.id = vv.visitor_id
+      LEFT JOIN movement_contingencies mc ON mc.created_movement_id=pvm.id AND mc.entity_type='VEHICULO_PARTICULAR'
       UNION ALL
       SELECT CONCAT(ivt.id, '-SALIDA'), 'VEHICULO_INSTITUCIONAL', 'SALIDA',
              CONCAT(iv.brand, ' ', iv.model), iv.plate, ivt.departure_at, 'BOLETA_SOIN',

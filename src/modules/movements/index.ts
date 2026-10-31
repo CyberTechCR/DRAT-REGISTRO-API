@@ -160,11 +160,11 @@ movementsRouter.get('/institutional-vehicles/history', async (_req, res, next) =
   try { res.json({ data: await listInstitutionalTrips() }); } catch (error) { next(error); }
 });
 
-movementsRouter.post('/contingencies', authorize('ADMINISTRADOR'), async (req, res, next) => {
+movementsRouter.post('/contingencies', async (req, res, next) => {
   try {
     const auth = typeof req.auth === 'object' ? req.auth : undefined;
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
     if (!['FUNCIONARIO', 'VEHICULO_PARTICULAR'].includes(req.body?.entityType) || typeof req.body?.entityId !== 'string' || !['INGRESO', 'SALIDA'].includes(req.body?.movementType)) throw new ApiError(400, 'Datos de contingencia inválidos');
-    res.status(201).json({ data: await createMovementContingency({ entityType: req.body.entityType as ContingencyEntity, entityId: req.body.entityId, movementType: req.body.movementType as MovementType, reason: req.body.reason, authorizedByUserId: auth.sub }) });
+    res.status(201).json({ data: await createMovementContingency({ entityType: req.body.entityType as ContingencyEntity, entityId: req.body.entityId, movementType: req.body.movementType as MovementType, reason: req.body.reason, authorizedByReference:req.body.authorizedByReference, observations:req.body.observations, authorizedByUserId: auth.sub }) });
   } catch (error) { next(error); }
 });

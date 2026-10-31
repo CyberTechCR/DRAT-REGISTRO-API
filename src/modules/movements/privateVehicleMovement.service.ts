@@ -17,7 +17,7 @@ async function resolveVehicle(plateInput: string, transaction?: Transaction) {
   const plate = normalizeMovementPlate(plateInput);
   const vehicle = await getPrivateVehicleModel().findOne({ where: { plate }, transaction, lock: transaction?.LOCK.UPDATE });
   if (!vehicle) throw new ApiError(404, 'Placa desconocida. Debe continuar con el flujo de visitantes');
-  if (!vehicle.active) throw new ApiError(409, 'El vehículo particular está inactivo');
+  if (!vehicle.active) throw new ApiError(409, 'El vehículo particular está inactivo y requiere autorización excepcional', { code: 'VEHICLE_AUTHORIZATION_REQUIRED', entityType: 'VEHICULO_PARTICULAR', entityId: vehicle.id, requestedMovement: 'INGRESO', authorizedRoute: 'Registre el motivo, la persona que autoriza y las observaciones' });
   const owner = await getEmployeeModel().findByPk(vehicle.ownerEmployeeId, { transaction });
   if (!owner) throw new ApiError(404, 'El vehículo no tiene propietario habitual');
   if (!owner.active) throw new ApiError(409, 'El propietario habitual está inactivo');
