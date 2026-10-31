@@ -40,9 +40,9 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
       SELECT em.id::text AS id, 'FUNCIONARIO'::text AS type, em.movement_type::text AS state,
              e.name AS subject, e.identification AS identifier, em.occurred_at AS "occurredAt",
              em.source AS source, u.name AS "operatorName", u.email AS "operatorEmail",
-             jsonb_build_object('departamento', e.department, 'puesto', e.position, 'tag', nt.code) AS details
+             jsonb_build_object('departamento', e.department, 'puesto', e.position, 'tag', nt.code, 'motivoManual', mmr.reason, 'revisionAdministrativa', mmr.status, 'notaRevision', mmr.review_note) AS details
       FROM employee_movements em JOIN employees e ON e.id = em.employee_id
-      JOIN users u ON u.id = em.confirmed_by_user_id LEFT JOIN nfc_tags nt ON nt.id = em.nfc_tag_id
+      JOIN users u ON u.id = em.confirmed_by_user_id LEFT JOIN nfc_tags nt ON nt.id = em.nfc_tag_id LEFT JOIN manual_movement_reviews mmr ON mmr.employee_movement_id=em.id
       UNION ALL
       SELECT pvm.id::text, 'VEHICULO_PARTICULAR', pvm.movement_type::text,
              CONCAT(pv.brand, ' ', pv.model), pv.plate, pvm.occurred_at, pvm.source,

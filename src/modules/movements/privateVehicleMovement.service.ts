@@ -47,7 +47,7 @@ export async function resolvePrivateVehicleMovement(plate: string): Promise<{
   };
 }
 
-export async function createPrivateVehicleMovement(input: { plate: string; driverEmployeeId?: string; driverVisitorVisitId?: string; ownerAuthorizationConfirmed?: boolean; authorizationNote?: string; occupantEmployeeIds: string[]; movementType: MovementType; source: 'PLACA_MANUAL' | 'OCR'; confirmedByUserId: string }): Promise<{
+export async function createPrivateVehicleMovement(input: { plate: string; driverEmployeeId?: string; driverVisitorVisitId?: string; ownerAuthorizationConfirmed?: boolean; authorizationNote?: string; occupantEmployeeIds: string[]; movementType: MovementType; source: 'PLACA_MANUAL' | 'OCR'; manualReason?: string; confirmedByUserId: string }): Promise<{
   id: string; vehicleId: string; driverEmployeeId: string | null; driverVisitorVisitId: string | null; occupantEmployeeIds: string[]; movementType: MovementType; occurredAt: Date;
 }> {
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
@@ -76,6 +76,10 @@ export async function createPrivateVehicleMovement(input: { plate: string; drive
       if (expected !== proposedMovement) throw new ApiError(409, `${person.name} no puede registrar ${proposedMovement.toLowerCase()} porque su último estado no coincide`);
     }
     const movement = await getPrivateVehicleMovementModel().create({ vehicleId: vehicle.id, driverEmployeeId: input.driverEmployeeId ?? null, driverVisitorVisitId: input.driverVisitorVisitId ?? null, ownerAuthorizationConfirmed: input.ownerAuthorizationConfirmed ?? false, authorizationNote: input.authorizationNote?.trim() ?? null, movementType: proposedMovement, source: input.source, confirmedByUserId: input.confirmedByUserId }, { transaction });
+    if (input.source === 'PLACA_MANUAL') {
+      const reason = input.manualReason?.trim(); if (!reason || reason.length < 10 || reason.length > 500) throw new ApiError(400, 'El motivo de uso manual debe tener entre 10 y 500 caracteres');
+      await requireDatabase().query(`INSERT INTO manual_movement_reviews(private_vehicle_movement_id,record_type,reason) VALUES(:movementId,'VEHICULO_PARTICULAR',:reason)`, { replacements: { movementId: movement.id, reason }, type: QueryTypes.INSERT, transaction });
+    }
     if (personIds.length) await getEmployeeMovementModel().bulkCreate(personIds.map((employeeId) => ({ employeeId, nfcTagId: null, movementType: proposedMovement, source: 'VEHICULO_PARTICULAR' as const, confirmedByUserId: input.confirmedByUserId })), { transaction });
     if (visitorPickup) await requireDatabase().query('UPDATE visitor_visits SET exit_at = NOW(), exit_confirmed_by_user_id = :userId, updated_at = NOW() WHERE id = :visitId AND exit_at IS NULL', { replacements: { visitId: input.driverVisitorVisitId, userId: input.confirmedByUserId }, type: QueryTypes.UPDATE, transaction });
     for (const employeeId of occupantIds) {

@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { ApiError } from '../../errors/ApiError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
-import { createManualMovement, createNfcMovement, getCurrentPresenceCount, getEmergencyPresence, resolveManualMovement, resolveNfcMovement } from './employeeMovement.service.js';
+import { createManualMovement, createNfcMovement, getCurrentPresenceCount, getEmergencyPresence, listPendingManualMovementReviews, resolveManualMovement, resolveManualMovementReview, resolveNfcMovement } from './employeeMovement.service.js';
 import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
 import { createInstitutionalDeparture, createInstitutionalReturn, decideInstitutionalAssetReview, listInstitutionalTrips, listPendingInstitutionalAssetReviews, resolveInstitutionalAssetReview, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
@@ -48,8 +48,14 @@ movementsRouter.post('/employees/manual', async (req, res, next) => {
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
     if (typeof req.body?.employeeId !== 'string') throw new ApiError(400, 'Funcionario requerido');
     if (!['INGRESO', 'SALIDA'].includes(req.body?.movementType)) throw new ApiError(400, 'Tipo de movimiento inválido');
-    res.status(201).json({ data: await createManualMovement({ employeeId: req.body.employeeId, movementType: req.body.movementType as MovementType, confirmedByUserId: auth.sub }) });
+    res.status(201).json({ data: await createManualMovement({ employeeId: req.body.employeeId, movementType: req.body.movementType as MovementType, reason: req.body.reason, confirmedByUserId: auth.sub }) });
   } catch (error) { next(error); }
+});
+movementsRouter.get('/employees/manual/reviews/pending', authorize('ADMINISTRADOR'), async (_req, res, next) => {
+  try { res.json({ data: await listPendingManualMovementReviews() }); } catch (error) { next(error); }
+});
+movementsRouter.post('/employees/manual/reviews/:id/resolve', authorize('ADMINISTRADOR'), async (req, res, next) => {
+  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; const id = req.params.id; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof id !== 'string') throw new ApiError(400, 'Revisión inválida'); res.json({ data: await resolveManualMovementReview(id, req.body?.note, auth.sub) }); } catch (error) { next(error); }
 });
 
 movementsRouter.get('/employees/presence/count', async (_req, res, next) => {
@@ -140,7 +146,7 @@ movementsRouter.post('/private-vehicles', async (req, res, next) => {
     if (!Array.isArray(req.body?.occupantEmployeeIds) || !req.body.occupantEmployeeIds.every((id: unknown) => typeof id === 'string')) throw new ApiError(400, 'La lista de acompañantes es inválida');
     if (!['INGRESO', 'SALIDA'].includes(req.body?.movementType)) throw new ApiError(400, 'Tipo de movimiento inválido');
     if (!['PLACA_MANUAL', 'OCR'].includes(req.body?.source)) throw new ApiError(400, 'Origen de placa inválido');
-    res.status(201).json({ data: await createPrivateVehicleMovement({ plate: req.body.plate, driverEmployeeId: employeeDriver ? req.body.driverEmployeeId : undefined, driverVisitorVisitId: visitorDriver ? req.body.driverVisitorVisitId : undefined, ownerAuthorizationConfirmed: req.body.ownerAuthorizationConfirmed, authorizationNote: req.body.authorizationNote, occupantEmployeeIds: req.body.occupantEmployeeIds, movementType: req.body.movementType as MovementType, source: req.body.source, confirmedByUserId: auth.sub }) });
+    res.status(201).json({ data: await createPrivateVehicleMovement({ plate: req.body.plate, driverEmployeeId: employeeDriver ? req.body.driverEmployeeId : undefined, driverVisitorVisitId: visitorDriver ? req.body.driverVisitorVisitId : undefined, ownerAuthorizationConfirmed: req.body.ownerAuthorizationConfirmed, authorizationNote: req.body.authorizationNote, occupantEmployeeIds: req.body.occupantEmployeeIds, movementType: req.body.movementType as MovementType, source: req.body.source, manualReason: req.body.manualReason, confirmedByUserId: auth.sub }) });
   } catch (error) { next(error); }
 });
 

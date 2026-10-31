@@ -84,13 +84,27 @@ export async function resolveManualMovement(employeeId: string): Promise<Omit<Re
   };
 }
 
-export async function createManualMovement(input: { employeeId: string; movementType: MovementType; confirmedByUserId: string }): Promise<CreatedMovementResult> {
+export async function createManualMovement(input: { employeeId: string; movementType: MovementType; reason: string; confirmedByUserId: string }): Promise<CreatedMovementResult> {
+  const reason = input.reason?.trim();
+  if (!reason || reason.length < 10 || reason.length > 500) throw new ApiError(400, 'El motivo de uso manual debe tener entre 10 y 500 caracteres');
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
     const { employee, proposedMovement } = await resolveEmployee(input.employeeId, transaction);
     if (input.movementType !== proposedMovement) throw new ApiError(409, `El funcionario ya figura ${proposedMovement === 'SALIDA' ? 'dentro' : 'fuera'}; no puede registrar otro ${input.movementType.toLowerCase()} normal`, { code: 'MOVEMENT_INCONSISTENCY', entityType: 'FUNCIONARIO', entityId: employee.id, requestedMovement: input.movementType, authorizedRoute: 'Un administrador puede registrar una contingencia con motivo obligatorio' });
     const movement = await getEmployeeMovementModel().create({ employeeId: employee.id, nfcTagId: null, movementType: proposedMovement, source: 'BUSQUEDA_MANUAL', confirmedByUserId: input.confirmedByUserId }, { transaction });
+    await requireDatabase().query('INSERT INTO manual_movement_reviews(employee_movement_id,reason) VALUES(:movementId,:reason)', { replacements: { movementId: movement.id, reason }, type: QueryTypes.INSERT, transaction });
     return { id: movement.id, employeeId: movement.employeeId, nfcTagId: null, movementType: movement.movementType, source: movement.source, confirmedByUserId: movement.confirmedByUserId, occurredAt: movement.occurredAt, employee: { id: employee.id, identification: employee.identification, name: employee.name } };
   });
+}
+
+export async function listPendingManualMovementReviews() {
+  return requireDatabase().query(`SELECT mmr.id,COALESCE(em.id,pvm.id) AS "movementId",CASE WHEN mmr.record_type='FUNCIONARIO' THEN e.name ELSE CONCAT(pv.brand,' ',pv.model) END AS name,CASE WHEN mmr.record_type='FUNCIONARIO' THEN e.identification ELSE pv.plate END AS identification,COALESCE(em.movement_type,pvm.movement_type) AS "movementType",COALESCE(em.occurred_at,pvm.occurred_at) AS "occurredAt",mmr.reason,u.name AS "operatorName",mmr.record_type AS "recordType" FROM manual_movement_reviews mmr LEFT JOIN employee_movements em ON em.id=mmr.employee_movement_id LEFT JOIN employees e ON e.id=em.employee_id LEFT JOIN private_vehicle_movements pvm ON pvm.id=mmr.private_vehicle_movement_id LEFT JOIN private_vehicles pv ON pv.id=pvm.vehicle_id JOIN users u ON u.id=COALESCE(em.confirmed_by_user_id,pvm.confirmed_by_user_id) WHERE mmr.status='PENDIENTE' ORDER BY mmr.created_at DESC`, { type: QueryTypes.SELECT });
+}
+
+export async function resolveManualMovementReview(id: string, noteInput: unknown, userId: string) {
+  if (typeof noteInput !== 'string' || noteInput.trim().length < 2 || noteInput.trim().length > 500) throw new ApiError(400, 'Nota de revisión requerida');
+  const [result] = await requireDatabase().query(`UPDATE manual_movement_reviews SET status='RESUELTO',review_note=:note,reviewed_by_user_id=:userId,reviewed_at=NOW() WHERE id=:id AND status='PENDIENTE' RETURNING id`, { replacements: { id, note: noteInput.trim(), userId }, type: QueryTypes.SELECT });
+  if (!result) throw new ApiError(409, 'La revisión ya fue resuelta o no existe');
+  return result;
 }
 
 export async function getCurrentPresenceCount(): Promise<number> {
