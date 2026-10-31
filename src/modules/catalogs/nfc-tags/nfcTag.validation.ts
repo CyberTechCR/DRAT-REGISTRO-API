@@ -19,7 +19,7 @@ function employeeId(value: unknown) {
 
 export function validateCreateNfcTag(body: unknown) {
   const value = body as Record<string, unknown>;
-  return { code: code(value.code), employeeId: employeeId(value.employeeId) };
+  return { code: code(value.code), employeeId: value.employeeId === null || value.employeeId === undefined ? null : employeeId(value.employeeId) };
 }
 
 export function validateUpdateNfcTag(body: unknown) {

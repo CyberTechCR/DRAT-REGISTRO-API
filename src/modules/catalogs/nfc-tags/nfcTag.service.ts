@@ -1,6 +1,7 @@
-import { UniqueConstraintError } from 'sequelize';
+import { QueryTypes, UniqueConstraintError } from 'sequelize';
 
 import { ApiError } from '../../../errors/ApiError.js';
+import { requireDatabase } from '../../../config/database.js';
 import { getEmployeeMovementModel } from '../../movements/employeeMovement.model.js';
 import { getEmployeeModel } from '../employees/employee.model.js';
 import { getNfcTagModel, type NfcTag } from './nfcTag.model.js';
@@ -24,8 +25,8 @@ export async function listNfcTags() {
   return Promise.all(tags.map(withEmployee));
 }
 
-export async function createNfcTag(input: { code: string; employeeId: string }) {
-  await requireActiveEmployee(input.employeeId);
+export async function createNfcTag(input: { code: string; employeeId: string | null }) {
+  if (input.employeeId) await requireActiveEmployee(input.employeeId);
   try { return withEmployee(await getNfcTagModel().create(input)); }
   catch (error) {
     if (error instanceof UniqueConstraintError) throw new ApiError(409, 'El TAG está duplicado o el funcionario ya tiene un TAG asociado');
@@ -52,5 +53,7 @@ export async function deleteNfcTag(id: string) {
   if (tag.employeeId) throw new ApiError(409, 'No se puede eliminar el TAG porque tiene un funcionario asignado');
   const movementCount = await getEmployeeMovementModel().count({ where: { nfcTagId: id } });
   if (movementCount > 0) throw new ApiError(409, 'No se puede eliminar el TAG porque posee movimientos históricos');
+  const [visitorUse] = await requireDatabase().query<{ count: string }>('SELECT COUNT(*)::text AS count FROM visitor_visits WHERE badge_code = :code', { replacements: { code: tag.code }, type: QueryTypes.SELECT });
+  if (Number(visitorUse?.count ?? 0) > 0) throw new ApiError(409, 'No se puede eliminar el TAG porque posee historial de visitantes');
   await tag.destroy();
 }

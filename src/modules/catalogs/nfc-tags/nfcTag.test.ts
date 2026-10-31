@@ -15,6 +15,10 @@ describe('catálogo de TAG NFC', () => {
     expect(validateCreateNfcTag({ code: 'tag-001', employeeId })).toEqual({ code: 'TAG-001', employeeId });
   });
 
+  it('permite registrar un TAG disponible para visitantes sin funcionario', () => {
+    expect(validateCreateNfcTag({ code: '04:DA:68:AB' })).toEqual({ code: '04DA68AB', employeeId: null });
+  });
+
   it('impide modificar el código del TAG', () => {
     expect(() => validateUpdateNfcTag({ code: 'TAG-002' })).toThrow('El código del TAG NFC no se puede modificar');
   });
