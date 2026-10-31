@@ -7,6 +7,7 @@ export class NfcTag extends Model<InferAttributes<NfcTag>, InferCreationAttribut
   declare code: string;
   declare employeeId: string | null;
   declare active: CreationOptional<boolean>;
+  declare condition: CreationOptional<'OPERATIVO' | 'DANADO' | 'PERDIDO' | 'INACTIVO'>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -20,6 +21,7 @@ export function getNfcTagModel() {
       code: { type: DataTypes.STRING(80), allowNull: false, unique: true },
       employeeId: { type: DataTypes.UUID, allowNull: true, unique: true, field: 'employee_id' },
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+      condition: { type: DataTypes.STRING(12), allowNull: false, defaultValue: 'OPERATIVO' },
       createdAt: DataTypes.DATE,
       updatedAt: DataTypes.DATE,
     }, { sequelize: requireDatabase(), tableName: 'nfc_tags', modelName: 'NfcTag' });

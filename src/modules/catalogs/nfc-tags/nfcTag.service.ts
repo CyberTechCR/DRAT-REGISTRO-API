@@ -13,11 +13,13 @@ async function requireActiveEmployee(id: string) {
   return employee;
 }
 
-async function withEmployee(tag: NfcTag) {
+async function withEmployee(tag: NfcTag): Promise<Record<string, unknown>> {
   const employee = tag.employeeId
     ? await getEmployeeModel().findByPk(tag.employeeId, { attributes: ['id', 'identification', 'name', 'department', 'position', 'active'] })
     : null;
-  return { ...tag.toJSON(), employee };
+  const [visitorAssignment] = await requireDatabase().query<{ name: string }>(`SELECT v.name FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id WHERE vv.badge_code = :code AND vv.exit_at IS NULL LIMIT 1`, { replacements: { code: tag.code }, type: QueryTypes.SELECT });
+  const operationalStatus = tag.condition !== 'OPERATIVO' ? tag.condition : (employee || visitorAssignment ? 'ASIGNADO' : 'DISPONIBLE');
+  return { ...tag.toJSON(), employee, visitorAssignment: visitorAssignment ?? null, operationalStatus };
 }
 
 export async function listNfcTags() {
@@ -25,26 +27,32 @@ export async function listNfcTags() {
   return Promise.all(tags.map(withEmployee));
 }
 
-export async function createNfcTag(input: { code: string; employeeId: string | null }) {
+export async function createNfcTag(input: { code: string; employeeId: string | null }, userId?: string) {
   if (input.employeeId) await requireActiveEmployee(input.employeeId);
-  try { return withEmployee(await getNfcTagModel().create(input)); }
+  try { const tag = await getNfcTagModel().create(input); if (userId) await recordHistory(tag.id, 'CREADO', input.employeeId ? 'TAG creado y asignado a funcionario' : 'TAG creado para visitantes', userId); return withEmployee(tag); }
   catch (error) {
     if (error instanceof UniqueConstraintError) throw new ApiError(409, 'El TAG está duplicado o el funcionario ya tiene un TAG asociado');
     throw error;
   }
 }
 
-export async function updateNfcTag(id: string, input: { employeeId?: string | null; active?: boolean }) {
+export async function updateNfcTag(id: string, input: { employeeId?: string | null; active?: boolean; condition?: 'OPERATIVO' | 'DANADO' | 'PERDIDO' | 'INACTIVO' }, userId?: string) {
   const tag = await getNfcTagModel().findByPk(id);
   if (!tag) throw new ApiError(404, 'TAG NFC no encontrado');
   const employeeId = input.employeeId === undefined ? tag.employeeId : input.employeeId;
   if (employeeId && ((input.employeeId !== undefined && input.employeeId !== null) || input.active === true)) await requireActiveEmployee(employeeId);
-  const update = input.employeeId === null ? { ...input, active: true } : input;
-  try { await tag.update(update); return withEmployee(tag); }
+  const update = input.condition ? { ...input, active: input.condition === 'OPERATIVO' } : input.employeeId === null ? { ...input, active: true } : input;
+  try { await tag.update(update); if (userId) await recordHistory(tag.id, 'ACTUALIZADO', `Estado: ${tag.condition}; asignación: ${tag.employeeId ?? 'visitantes'}`, userId); return withEmployee(tag); }
   catch (error) {
     if (error instanceof UniqueConstraintError) throw new ApiError(409, 'El funcionario ya tiene un TAG asociado');
     throw error;
   }
+}
+
+async function recordHistory(tagId: string, event: string, detail: string, userId: string) { await requireDatabase().query(`INSERT INTO nfc_tag_history (nfc_tag_id, event, detail, changed_by_user_id) VALUES (:tagId, :event, :detail, :userId)`, { replacements: { tagId, event, detail, userId }, type: QueryTypes.INSERT }); }
+
+export async function getNfcTagHistory(id: string) {
+  return requireDatabase().query<{ id: string; event: string; detail: string; occurredAt: Date; changedBy: string }>(`SELECT h.id, h.event, h.detail, h.occurred_at AS "occurredAt", u.name AS "changedBy" FROM nfc_tag_history h JOIN users u ON u.id = h.changed_by_user_id WHERE h.nfc_tag_id = :id ORDER BY h.occurred_at DESC`, { replacements: { id }, type: QueryTypes.SELECT });
 }
 
 export async function deleteNfcTag(id: string) {

@@ -9,7 +9,7 @@ import { createInstitutionalVehicle, listInstitutionalVehicles, updateInstitutio
 import { validateCreateInstitutionalVehicle, validateUpdateInstitutionalVehicle } from './institutional-vehicles/institutionalVehicle.validation.js';
 import { createPrivateVehicle, listPrivateVehicles, updatePrivateVehicle } from './private-vehicles/privateVehicle.service.js';
 import { validateCreatePrivateVehicle, validateUpdatePrivateVehicle } from './private-vehicles/privateVehicle.validation.js';
-import { createNfcTag, deleteNfcTag, listNfcTags, updateNfcTag } from './nfc-tags/nfcTag.service.js';
+import { createNfcTag, deleteNfcTag, getNfcTagHistory, listNfcTags, updateNfcTag } from './nfc-tags/nfcTag.service.js';
 import { validateCreateNfcTag, validateUpdateNfcTag } from './nfc-tags/nfcTag.validation.js';
 import { createDepartment, deleteDepartment, listDepartments, updateDepartment } from './departments/department.service.js';
 import { validateCreateDepartment, validateUpdateDepartment } from './departments/department.validation.js';
@@ -124,16 +124,19 @@ catalogsRouter.get('/nfc-tags', authorize('ADMINISTRADOR'), async (_req, res, ne
 });
 
 catalogsRouter.post('/nfc-tags', authorize('ADMINISTRADOR'), async (req, res, next) => {
-  try { res.status(201).json({ data: await createNfcTag(validateCreateNfcTag(req.body)) }); } catch (error) { next(error); }
+  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); res.status(201).json({ data: await createNfcTag(validateCreateNfcTag(req.body), auth.sub) }); } catch (error) { next(error); }
 });
 
 catalogsRouter.patch('/nfc-tags/:id', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try {
     const id = req.params.id;
     if (typeof id !== 'string') throw new ApiError(400, 'Identificador de TAG inválido');
-    res.json({ data: await updateNfcTag(id, validateUpdateNfcTag(req.body)) });
+    const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
+    res.json({ data: await updateNfcTag(id, validateUpdateNfcTag(req.body), auth.sub) });
   } catch (error) { next(error); }
 });
+
+catalogsRouter.get('/nfc-tags/:id/history', authorize('ADMINISTRADOR'), async (req, res, next) => { try { const id = typeof req.params.id === 'string' ? req.params.id : undefined; if (!id) throw new ApiError(400, 'Identificador de TAG inválido'); res.json({ data: await getNfcTagHistory(id) }); } catch (error) { next(error); } });
 
 catalogsRouter.delete('/nfc-tags/:id', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try {

@@ -24,12 +24,16 @@ export function validateCreateNfcTag(body: unknown) {
 
 export function validateUpdateNfcTag(body: unknown) {
   const value = body as Record<string, unknown>;
-  const result: { employeeId?: string | null; active?: boolean } = {};
+  const result: { employeeId?: string | null; active?: boolean; condition?: 'OPERATIVO' | 'DANADO' | 'PERDIDO' | 'INACTIVO' } = {};
   if ('code' in value) throw new ApiError(400, 'El código del TAG NFC no se puede modificar');
   if ('employeeId' in value) result.employeeId = value.employeeId === null ? null : employeeId(value.employeeId);
   if ('active' in value) {
     if (typeof value.active !== 'boolean') throw new ApiError(400, 'El estado del TAG es inválido');
     result.active = value.active;
+  }
+  if ('condition' in value) {
+    if (!['OPERATIVO', 'DANADO', 'PERDIDO', 'INACTIVO'].includes(String(value.condition))) throw new ApiError(400, 'Condición del TAG inválida');
+    result.condition = value.condition as typeof result.condition;
   }
   if (!Object.keys(result).length) throw new ApiError(400, 'Debe indicar al menos un campo para actualizar');
   return result;
