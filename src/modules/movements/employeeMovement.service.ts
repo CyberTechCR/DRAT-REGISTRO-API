@@ -99,7 +99,7 @@ export async function getCurrentPresenceCount(): Promise<number> {
 
 export type EmergencyPresenceRecord = {
   id: string;
-  kind: 'FUNCIONARIO' | 'VISITANTE';
+  kind: 'FUNCIONARIO' | 'VISITANTE' | 'PROVEEDOR';
   name: string;
   identification: string;
   detail: string;
@@ -122,6 +122,11 @@ export async function getEmergencyPresence(): Promise<EmergencyPresenceRecord[]>
            CONCAT('Gafete ', vv.badge_code, ' · ', vv.reason) AS detail, vv.entry_at AS "enteredAt"
     FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id
     WHERE vv.exit_at IS NULL
+    UNION ALL
+    SELECT pp.id::text AS id, 'PROVEEDOR' AS kind, pp.name, pp.identification,
+           CONCAT(pp.company, ' · Proveedor permanente') AS detail, latest.occurred_at AS "enteredAt"
+    FROM (SELECT DISTINCT ON (provider_id) provider_id,movement_type,occurred_at FROM permanent_provider_movements ORDER BY provider_id,occurred_at DESC,created_at DESC) latest
+    JOIN permanent_providers pp ON pp.id=latest.provider_id WHERE latest.movement_type='INGRESO'
     ORDER BY "enteredAt" DESC
   `, { type: QueryTypes.SELECT });
 }

@@ -11,6 +11,7 @@ import { createMovementContingency, type ContingencyEntity } from './movementCon
 import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeReturns, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit, resolveLegacyBadgeReturn, resolvePendingBadgeReturn } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
 import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
+import { createPermanentProviderMovement, resolvePermanentProviderMovement } from './permanentProviderMovement.service.js';
 
 export const movementsModule = { key: 'movements', status: 'in_progress' } as const;
 export const movementsRouter = Router();
@@ -58,6 +59,9 @@ movementsRouter.get('/employees/presence/count', async (_req, res, next) => {
 movementsRouter.get('/presence/emergency', async (_req, res, next) => {
   try { res.json({ data: await getEmergencyPresence() }); } catch (error) { next(error); }
 });
+
+movementsRouter.post('/permanent-providers/resolve', async (req,res,next)=>{try{const code=typeof req.body?.code==='string'?req.body.code:undefined;const plate=typeof req.body?.plate==='string'?req.body.plate:undefined;if(Boolean(code)===Boolean(plate))throw new ApiError(400,'Indique exactamente un TAG o una placa');res.json({data:await resolvePermanentProviderMovement({code,plate})});}catch(error){next(error);}});
+movementsRouter.post('/permanent-providers', async (req,res,next)=>{try{const auth=typeof req.auth==='object'?req.auth:undefined;if(typeof auth?.sub!=='string')throw new ApiError(401,'No autorizado');const code=typeof req.body?.code==='string'?req.body.code:undefined;const plate=typeof req.body?.plate==='string'?req.body.plate:undefined;if(Boolean(code)===Boolean(plate))throw new ApiError(400,'Indique exactamente un TAG o una placa');if(!['INGRESO','SALIDA'].includes(req.body?.movementType))throw new ApiError(400,'Tipo de movimiento inválido');const source=code?'NFC_FISICO':'PLACA_MANUAL';res.status(201).json({data:await createPermanentProviderMovement({code,plate,movementType:req.body.movementType,source,userId:auth.sub})});}catch(error){next(error);}});
 
 movementsRouter.get('/history', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try { res.json({ data: await listMovementHistory(validateHistoryFilters(req.query)) }); } catch (error) { next(error); }

@@ -3,7 +3,7 @@ import { QueryTypes } from 'sequelize';
 import { requireDatabase } from '../../config/database.js';
 import { ApiError } from '../../errors/ApiError.js';
 
-export const historyTypes = ['FUNCIONARIO', 'VEHICULO_PARTICULAR', 'VEHICULO_INSTITUCIONAL', 'VISITANTE'] as const;
+export const historyTypes = ['FUNCIONARIO', 'VEHICULO_PARTICULAR', 'VEHICULO_INSTITUCIONAL', 'VISITANTE', 'PROVEEDOR'] as const;
 export const historyStates = ['INGRESO', 'SALIDA'] as const;
 export type HistoryType = typeof historyTypes[number];
 export type HistoryState = typeof historyStates[number];
@@ -79,6 +79,13 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
              jsonb_build_object('gafete', vv.badge_code, 'motivo', vv.reason)
       FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id JOIN users u ON u.id = vv.exit_confirmed_by_user_id
       WHERE vv.exit_at IS NOT NULL
+      UNION ALL
+      SELECT ppm.id::text, 'PROVEEDOR', ppm.movement_type::text, pp.name, pp.identification,
+             ppm.occurred_at, ppm.source, u.name, u.email,
+             jsonb_build_object('empresa',pp.company,'telefono',pp.phone,'placa',ppv.plate,'tag',nt.code)
+      FROM permanent_provider_movements ppm JOIN permanent_providers pp ON pp.id=ppm.provider_id
+      JOIN users u ON u.id=ppm.confirmed_by_user_id LEFT JOIN permanent_provider_vehicles ppv ON ppv.id=ppm.vehicle_id
+      LEFT JOIN nfc_tags nt ON nt.id=ppm.nfc_tag_id
     ) history ${where}
     ORDER BY history."occurredAt" DESC
     LIMIT 1000
