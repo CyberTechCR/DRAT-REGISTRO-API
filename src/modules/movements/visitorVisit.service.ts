@@ -71,7 +71,7 @@ export async function lookupVisitorByIdentification(identificationInput: string)
 }
 
 export async function listAvailableVisitorBadges() {
-  const rows = await requireDatabase().query<{ badgeCode: string }>(`SELECT nt.code AS "badgeCode" FROM nfc_tags nt WHERE nt.active = TRUE AND nt.condition = 'OPERATIVO' AND nt.employee_id IS NULL AND NOT EXISTS (SELECT 1 FROM permanent_provider_tags ppt WHERE ppt.nfc_tag_id = nt.id) AND NOT EXISTS (SELECT 1 FROM visitor_visits vv WHERE vv.badge_code = nt.code AND (vv.exit_at IS NULL OR vv.badge_return_pending = TRUE)) ORDER BY nt.code`, { type: QueryTypes.SELECT });
+  const rows = await requireDatabase().query<{ badgeCode: string }>(`SELECT nt.code AS "badgeCode" FROM nfc_tags nt WHERE nt.active = TRUE AND nt.condition = 'OPERATIVO' AND nt.purpose = 'VISITANTE' AND nt.employee_id IS NULL AND NOT EXISTS (SELECT 1 FROM permanent_provider_tags ppt WHERE ppt.nfc_tag_id = nt.id) AND NOT EXISTS (SELECT 1 FROM visitor_visits vv WHERE vv.badge_code = nt.code AND (vv.exit_at IS NULL OR vv.badge_return_pending = TRUE)) ORDER BY nt.code`, { type: QueryTypes.SELECT });
   return rows.map((item) => item.badgeCode);
 }
 

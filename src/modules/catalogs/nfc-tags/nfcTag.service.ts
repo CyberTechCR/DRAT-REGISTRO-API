@@ -28,9 +28,9 @@ export async function listNfcTags() {
   return Promise.all(tags.map(withEmployee));
 }
 
-export async function createNfcTag(input: { code: string; employeeId: string | null }, userId?: string) {
+export async function createNfcTag(input: { code: string; employeeId: string | null; purpose: 'GENERAL' | 'VISITANTE' }, userId?: string) {
   if (input.employeeId) await requireActiveEmployee(input.employeeId);
-  try { const tag = await getNfcTagModel().create(input); if (userId) await recordHistory(tag.id, 'CREADO', input.employeeId ? 'TAG creado y asignado a funcionario' : 'TAG creado para visitantes', userId); return withEmployee(tag); }
+  try { const tag = await getNfcTagModel().create(input); if (userId) await recordHistory(tag.id, 'CREADO', input.purpose === 'VISITANTE' ? 'Gafete creado para visitantes' : input.employeeId ? 'TAG creado y asignado a funcionario' : 'TAG general creado', userId); return withEmployee(tag); }
   catch (error) {
     if (error instanceof UniqueConstraintError) throw new ApiError(409, 'El TAG está duplicado o el funcionario ya tiene un TAG asociado');
     throw error;

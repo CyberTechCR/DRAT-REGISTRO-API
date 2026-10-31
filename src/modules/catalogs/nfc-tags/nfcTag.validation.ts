@@ -19,7 +19,10 @@ function employeeId(value: unknown) {
 
 export function validateCreateNfcTag(body: unknown) {
   const value = body as Record<string, unknown>;
-  return { code: code(value.code), employeeId: value.employeeId === null || value.employeeId === undefined ? null : employeeId(value.employeeId) };
+  const purpose = value.purpose === undefined ? 'GENERAL' : value.purpose;
+  if (!['GENERAL', 'VISITANTE'].includes(String(purpose))) throw new ApiError(400, 'Propósito del TAG inválido');
+  if (purpose === 'VISITANTE' && value.employeeId) throw new ApiError(400, 'Un gafete de visitante no puede asignarse a un funcionario');
+  return { code: code(value.code), employeeId: value.employeeId === null || value.employeeId === undefined ? null : employeeId(value.employeeId), purpose: purpose as 'GENERAL' | 'VISITANTE' };
 }
 
 export function validateUpdateNfcTag(body: unknown) {

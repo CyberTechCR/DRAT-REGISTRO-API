@@ -12,11 +12,12 @@ describe('catálogo de TAG NFC', () => {
   });
 
   it('valida la asociación con un funcionario', () => {
-    expect(validateCreateNfcTag({ code: 'tag-001', employeeId })).toEqual({ code: 'TAG-001', employeeId });
+    expect(validateCreateNfcTag({ code: 'tag-001', employeeId })).toEqual({ code: 'TAG-001', employeeId, purpose: 'GENERAL' });
   });
 
-  it('permite registrar un TAG disponible para visitantes sin funcionario', () => {
-    expect(validateCreateNfcTag({ code: '04:DA:68:AB' })).toEqual({ code: '04DA68AB', employeeId: null });
+  it('clasifica explícitamente un gafete de visitante', () => {
+    expect(validateCreateNfcTag({ code: '04:DA:68:AB', purpose: 'VISITANTE' })).toEqual({ code: '04DA68AB', employeeId: null, purpose: 'VISITANTE' });
+    expect(() => validateCreateNfcTag({ code: 'TAG-002', employeeId, purpose: 'VISITANTE' })).toThrow('Un gafete de visitante no puede asignarse a un funcionario');
   });
 
   it('impide modificar el código del TAG', () => {
