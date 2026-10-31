@@ -60,7 +60,7 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
              u.name, u.email,
              jsonb_build_object('boletaSoin', ivt.soin_number, 'destino', ivt.destination, 'conductor', e.name,
                'kilometraje', ivt.departure_mileage, 'combustible', ivt.departure_fuel, 'activos',
-               COALESCE((SELECT jsonb_agg(jsonb_build_object('descripcion', a.description, 'cantidad', a.quantity, 'identificador', a.identifier, 'observacion', a.observation) ORDER BY a.created_at, a.id) FROM institutional_vehicle_trip_assets a WHERE a.trip_id = ivt.id), '[]'::jsonb))
+               COALESCE((SELECT jsonb_agg(jsonb_build_object('descripcion', a.description, 'cantidad', a.quantity, 'identificador', a.identifier, 'observacion', a.observation, 'cantidadDevuelta', a.returned_quantity, 'observacionDevolucion', a.return_observation) ORDER BY a.created_at, a.id) FROM institutional_vehicle_trip_assets a WHERE a.trip_id = ivt.id), '[]'::jsonb))
       FROM institutional_vehicle_trips ivt JOIN institutional_vehicles iv ON iv.id = ivt.vehicle_id
       JOIN employees e ON e.id = ivt.driver_employee_id JOIN users u ON u.id = ivt.departure_confirmed_by_user_id
       UNION ALL
@@ -69,7 +69,7 @@ export async function listMovementHistory(filters: ReturnType<typeof validateHis
              u.name, u.email,
              jsonb_build_object('boletaSoin', ivt.soin_number, 'destino', ivt.destination, 'kilometraje', ivt.return_mileage,
                'combustible', ivt.return_fuel, 'activos',
-               COALESCE((SELECT jsonb_agg(jsonb_build_object('descripcion', a.description, 'cantidad', a.quantity, 'identificador', a.identifier, 'observacion', a.observation) ORDER BY a.created_at, a.id) FROM institutional_vehicle_trip_assets a WHERE a.trip_id = ivt.id), '[]'::jsonb))
+               COALESCE((SELECT jsonb_agg(jsonb_build_object('descripcion', a.description, 'cantidad', a.quantity, 'identificador', a.identifier, 'observacion', a.observation, 'cantidadDevuelta', a.returned_quantity, 'observacionDevolucion', a.return_observation) ORDER BY a.created_at, a.id) FROM institutional_vehicle_trip_assets a WHERE a.trip_id = ivt.id), '[]'::jsonb))
       FROM institutional_vehicle_trips ivt JOIN institutional_vehicles iv ON iv.id = ivt.vehicle_id
       JOIN users u ON u.id = ivt.return_confirmed_by_user_id WHERE ivt.return_at IS NOT NULL
       UNION ALL

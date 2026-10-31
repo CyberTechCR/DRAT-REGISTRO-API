@@ -6,7 +6,7 @@ import { authorize } from '../../middleware/authorize.js';
 import { createManualMovement, createNfcMovement, getCurrentPresenceCount, getEmergencyPresence, resolveManualMovement, resolveNfcMovement } from './employeeMovement.service.js';
 import type { MovementSource, MovementType } from './employeeMovement.model.js';
 import { createPrivateVehicleMovement, resolvePrivateVehicleMovement } from './privateVehicleMovement.service.js';
-import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutionalTrips, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
+import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutionalTrips, listPendingInstitutionalAssetReviews, resolveInstitutionalAssetReview, resolveInstitutionalDeparture, resolveInstitutionalReturn } from './institutionalVehicleTrip.service.js';
 import { createMovementContingency, type ContingencyEntity } from './movementContingency.service.js';
 import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeReturns, listPendingVisitorBadgeContingencies, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorEntryWithoutBadge, registerVisitorExit, resolveLegacyBadgeReturn, resolvePendingBadgeReturn, resolveVisitorBadgeContingency } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
@@ -158,10 +158,16 @@ movementsRouter.post('/institutional-vehicles/return/resolve', async (req, res, 
   try { if (typeof req.body?.soinNumber !== 'string') throw new ApiError(400, 'Boleta SOIN requerida'); res.json({ data: await resolveInstitutionalReturn(req.body.soinNumber) }); } catch (error) { next(error); }
 });
 movementsRouter.post('/institutional-vehicles/return', async (req, res, next) => {
-  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof req.body?.soinNumber !== 'string') throw new ApiError(400, 'Boleta SOIN requerida'); res.status(201).json({ data: await createInstitutionalReturn({ soinNumber: req.body.soinNumber, mileage: req.body.mileage, fuel: req.body.fuel, userId: auth.sub }) }); } catch (error) { next(error); }
+  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof req.body?.soinNumber !== 'string' || (req.body?.assets !== undefined && !Array.isArray(req.body.assets))) throw new ApiError(400, 'Boleta SOIN requerida'); res.status(201).json({ data: await createInstitutionalReturn({ soinNumber: req.body.soinNumber, mileage: req.body.mileage, fuel: req.body.fuel, assets: req.body.assets, userId: auth.sub }) }); } catch (error) { next(error); }
 });
 movementsRouter.get('/institutional-vehicles/history', async (_req, res, next) => {
   try { res.json({ data: await listInstitutionalTrips() }); } catch (error) { next(error); }
+});
+movementsRouter.get('/institutional-vehicles/asset-reviews/pending', authorize('ADMINISTRADOR'), async (_req, res, next) => {
+  try { res.json({ data: await listPendingInstitutionalAssetReviews() }); } catch (error) { next(error); }
+});
+movementsRouter.post('/institutional-vehicles/asset-reviews/:id/resolve', authorize('ADMINISTRADOR'), async (req, res, next) => {
+  try { const auth = typeof req.auth === 'object' ? req.auth : undefined; const id = req.params.id; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); if (typeof id !== 'string') throw new ApiError(400, 'Revisión inválida'); res.json({ data: await resolveInstitutionalAssetReview(id, req.body?.note, auth.sub) }); } catch (error) { next(error); }
 });
 
 movementsRouter.post('/contingencies', async (req, res, next) => {

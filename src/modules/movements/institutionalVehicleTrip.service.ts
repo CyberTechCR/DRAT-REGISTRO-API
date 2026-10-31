@@ -8,6 +8,7 @@ import { getInstitutionalVehicleTripModel, type InstitutionalVehicleTrip } from 
 
 type PersonData = { id: string; identification: string; name: string; department: string; position: string; active: boolean };
 export type InstitutionalTripAssetInput = { description: string; quantity: number; identifier?: string; observation?: string };
+export type InstitutionalTripAssetReturnInput = { id: string; returnedQuantity: number; observation?: string };
 const personData = (person: Employee): PersonData => ({ id: person.id, identification: person.identification, name: person.name, department: person.department, position: person.position, active: person.active });
 const normalize = (value: string) => value.trim().replace(/[\s-]/g, '').toUpperCase();
 const soin = (value: string) => { const result = value.trim().toUpperCase(); if (result.length < 2 || result.length > 50) throw new ApiError(400, 'Número de boleta SOIN inválido'); return result; };
@@ -41,7 +42,7 @@ async function verifyPeople(ids: string[], movement: MovementType, transaction: 
   return people;
 }
 async function detail(trip: InstitutionalVehicleTrip, transaction?: Transaction) {
-  const [vehicle, driver, tripOccupants, assets] = await Promise.all([getInstitutionalVehicleModel().findByPk(trip.vehicleId, { transaction }), getEmployeeModel().findByPk(trip.driverEmployeeId, { transaction }), occupants(trip.id, transaction), requireDatabase().query(`SELECT id, description, quantity, identifier, observation FROM institutional_vehicle_trip_assets WHERE trip_id = :tripId ORDER BY created_at, id`, { replacements: { tripId: trip.id }, type: QueryTypes.SELECT, transaction })]);
+  const [vehicle, driver, tripOccupants, assets] = await Promise.all([getInstitutionalVehicleModel().findByPk(trip.vehicleId, { transaction }), getEmployeeModel().findByPk(trip.driverEmployeeId, { transaction }), occupants(trip.id, transaction), requireDatabase().query(`SELECT id, description, quantity, identifier, observation, returned_quantity AS "returnedQuantity", return_observation AS "returnObservation", verified_at AS "verifiedAt" FROM institutional_vehicle_trip_assets WHERE trip_id = :tripId ORDER BY created_at, id`, { replacements: { tripId: trip.id }, type: QueryTypes.SELECT, transaction })]);
   return { ...trip.toJSON(), vehicle, driver: driver ? personData(driver) : null, occupants: tripOccupants, assets };
 }
 export async function resolveInstitutionalDeparture(plate: string) {
@@ -71,14 +72,39 @@ export async function resolveInstitutionalReturn(soinNumber: string) {
   const trip = await getInstitutionalVehicleTripModel().findOne({ where: { soinNumber: soin(soinNumber), returnAt: { [Op.is]: null } } });
   if (!trip) throw new ApiError(404, 'No existe un viaje abierto con esa boleta SOIN'); return detail(trip);
 }
-export async function createInstitutionalReturn(input: { soinNumber: string; mileage: number; fuel: number; userId: string }) {
+export async function createInstitutionalReturn(input: { soinNumber: string; mileage: number; fuel: number; assets?: InstitutionalTripAssetReturnInput[]; userId: string }) {
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
     const trip = await getInstitutionalVehicleTripModel().findOne({ where: { soinNumber: soin(input.soinNumber), returnAt: { [Op.is]: null } }, transaction, lock: transaction.LOCK.UPDATE });
     if (!trip) throw new ApiError(404, 'No existe un viaje abierto con esa boleta SOIN'); const returnMileage = integer(input.mileage, 'Kilometraje', 0); const returnFuel = integer(input.fuel, 'Combustible', 0, 100);
     if (returnMileage < trip.departureMileage) throw new ApiError(409, `El kilometraje de ingreso no puede ser menor que ${trip.departureMileage}`);
+    const registeredAssets = await requireDatabase().query<{ id: string; quantity: number }>('SELECT id, quantity FROM institutional_vehicle_trip_assets WHERE trip_id = :tripId ORDER BY id FOR UPDATE', { replacements: { tripId: trip.id }, type: QueryTypes.SELECT, transaction });
+    const returns = input.assets ?? [];
+    if (registeredAssets.length !== returns.length || new Set(returns.map((item) => item.id)).size !== returns.length) throw new ApiError(400, 'Debe verificar todos los activos asociados a la boleta SOIN');
+    let hasMissingAssets = false;
+    for (const registered of registeredAssets) {
+      const returned = returns.find((item) => item.id === registered.id);
+      if (!returned) throw new ApiError(400, 'La verificación de activos está incompleta');
+      const returnedQuantity = integer(returned.returnedQuantity, 'Cantidad devuelta', 0, registered.quantity);
+      const observation = optionalText(returned.observation, 'Observación de devolución', 500);
+      if (returnedQuantity < registered.quantity && !observation) throw new ApiError(400, 'Debe indicar una observación para cada activo faltante');
+      if (returnedQuantity < registered.quantity) hasMissingAssets = true;
+      await requireDatabase().query('UPDATE institutional_vehicle_trip_assets SET returned_quantity = :returnedQuantity, return_observation = :observation, verified_at = NOW() WHERE id = :id', { replacements: { id: registered.id, returnedQuantity, observation }, type: QueryTypes.UPDATE, transaction });
+    }
     const tripOccupants = await occupants(trip.id, transaction); await verifyPeople([trip.driverEmployeeId, ...tripOccupants.map((item) => item.id)], 'INGRESO', transaction);
-    await trip.update({ returnMileage, returnFuel, returnAt: new Date(), returnConfirmedByUserId: input.userId }, { transaction });
+    await trip.update({ returnMileage, returnFuel, returnAt: new Date(), returnConfirmedByUserId: input.userId, assetReviewStatus: hasMissingAssets ? 'PENDIENTE' : null } as never, { transaction });
     await getEmployeeMovementModel().bulkCreate([trip.driverEmployeeId, ...tripOccupants.map((item) => item.id)].map((employeeId) => ({ employeeId, nfcTagId: null, movementType: 'INGRESO' as const, source: 'VEHICULO_INSTITUCIONAL' as const, confirmedByUserId: input.userId })), { transaction }); return detail(trip, transaction);
   });
 }
 export async function listInstitutionalTrips() { const trips = await getInstitutionalVehicleTripModel().findAll({ order: [['departureAt', 'DESC']] }); return Promise.all(trips.map((trip) => detail(trip))); }
+
+export async function listPendingInstitutionalAssetReviews() {
+  return requireDatabase().query(`SELECT ivt.id, ivt.soin_number AS "soinNumber", iv.plate, iv.brand, iv.model, ivt.return_at AS "returnAt", u.name AS "operatorName", COALESCE(jsonb_agg(jsonb_build_object('id', a.id, 'description', a.description, 'quantity', a.quantity, 'returnedQuantity', a.returned_quantity, 'identifier', a.identifier, 'returnObservation', a.return_observation) ORDER BY a.created_at) FILTER (WHERE a.returned_quantity < a.quantity), '[]'::jsonb) AS assets FROM institutional_vehicle_trips ivt JOIN institutional_vehicles iv ON iv.id=ivt.vehicle_id JOIN users u ON u.id=ivt.return_confirmed_by_user_id LEFT JOIN institutional_vehicle_trip_assets a ON a.trip_id=ivt.id WHERE ivt.asset_review_status='PENDIENTE' GROUP BY ivt.id,iv.plate,iv.brand,iv.model,u.name ORDER BY ivt.return_at DESC`, { type: QueryTypes.SELECT });
+}
+
+export async function resolveInstitutionalAssetReview(id: string, noteInput: unknown, userId: string) {
+  const note = optionalText(noteInput, 'Nota de revisión', 500);
+  if (!note || note.length < 2) throw new ApiError(400, 'Nota de revisión requerida');
+  const [result] = await requireDatabase().query(`UPDATE institutional_vehicle_trips SET asset_review_status='RESUELTO',asset_review_note=:note,asset_reviewed_by_user_id=:userId,asset_reviewed_at=NOW(),updated_at=NOW() WHERE id=:id AND asset_review_status='PENDIENTE' RETURNING id`, { replacements: { id, note, userId }, type: QueryTypes.SELECT });
+  if (!result) throw new ApiError(409, 'La revisión ya fue resuelta o no existe');
+  return result;
+}
