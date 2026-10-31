@@ -18,8 +18,9 @@ async function withEmployee(tag: NfcTag): Promise<Record<string, unknown>> {
     ? await getEmployeeModel().findByPk(tag.employeeId, { attributes: ['id', 'identification', 'name', 'department', 'position', 'active'] })
     : null;
   const [visitorAssignment] = await requireDatabase().query<{ name: string }>(`SELECT v.name FROM visitor_visits vv JOIN visitors v ON v.id = vv.visitor_id WHERE vv.badge_code = :code AND vv.exit_at IS NULL LIMIT 1`, { replacements: { code: tag.code }, type: QueryTypes.SELECT });
-  const operationalStatus = tag.condition !== 'OPERATIVO' ? tag.condition : (employee || visitorAssignment ? 'ASIGNADO' : 'DISPONIBLE');
-  return { ...tag.toJSON(), employee, visitorAssignment: visitorAssignment ?? null, operationalStatus };
+  const [providerAssignment] = await requireDatabase().query<{ name: string }>(`SELECT pp.name FROM permanent_provider_tags ppt JOIN permanent_providers pp ON pp.id=ppt.provider_id WHERE ppt.nfc_tag_id=:id LIMIT 1`,{replacements:{id:tag.id},type:QueryTypes.SELECT});
+  const operationalStatus = tag.condition !== 'OPERATIVO' ? tag.condition : (employee || visitorAssignment || providerAssignment ? 'ASIGNADO' : 'DISPONIBLE');
+  return { ...tag.toJSON(), employee, visitorAssignment: visitorAssignment ?? null, providerAssignment: providerAssignment ?? null, operationalStatus };
 }
 
 export async function listNfcTags() {

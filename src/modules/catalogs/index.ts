@@ -11,6 +11,7 @@ import { createPrivateVehicle, listPrivateVehicles, updatePrivateVehicle } from 
 import { validateCreatePrivateVehicle, validateUpdatePrivateVehicle } from './private-vehicles/privateVehicle.validation.js';
 import { createNfcTag, deleteNfcTag, getNfcTagHistory, listNfcTags, updateNfcTag } from './nfc-tags/nfcTag.service.js';
 import { validateCreateNfcTag, validateUpdateNfcTag } from './nfc-tags/nfcTag.validation.js';
+import { createPermanentProvider, listPermanentProviders, updatePermanentProvider } from './permanentProvider.service.js';
 import { createDepartment, deleteDepartment, listDepartments, updateDepartment } from './departments/department.service.js';
 import { validateCreateDepartment, validateUpdateDepartment } from './departments/department.validation.js';
 
@@ -122,6 +123,10 @@ catalogsRouter.patch('/private-vehicles/:id', authorize('ADMINISTRADOR'), async 
 catalogsRouter.get('/nfc-tags', authorize('ADMINISTRADOR'), async (_req, res, next) => {
   try { res.json({ data: await listNfcTags() }); } catch (error) { next(error); }
 });
+
+catalogsRouter.get('/permanent-providers', authorize('ADMINISTRADOR'), async (_req,res,next)=>{try{res.json({data:await listPermanentProviders()});}catch(error){next(error);}});
+catalogsRouter.post('/permanent-providers', authorize('ADMINISTRADOR'), async (req,res,next)=>{try{res.status(201).json({data:await createPermanentProvider(req.body)});}catch(error){next(error);}});
+catalogsRouter.put('/permanent-providers/:id', authorize('ADMINISTRADOR'), async (req,res,next)=>{try{const id=typeof req.params.id==='string'?req.params.id:undefined;if(!id)throw new ApiError(400,'Proveedor inválido');res.json({data:await updatePermanentProvider(id,req.body)});}catch(error){next(error);}});
 
 catalogsRouter.post('/nfc-tags', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try { const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado'); res.status(201).json({ data: await createNfcTag(validateCreateNfcTag(req.body), auth.sub) }); } catch (error) { next(error); }
