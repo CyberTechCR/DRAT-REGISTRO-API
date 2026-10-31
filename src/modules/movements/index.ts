@@ -10,6 +10,7 @@ import { createInstitutionalDeparture, createInstitutionalReturn, listInstitutio
 import { createMovementContingency, type ContingencyEntity } from './movementContingency.service.js';
 import { listActiveVisitorVisits, listAvailableVisitorBadges, lookupVisitorByIdentification, registerVisitorEntry, registerVisitorExit } from './visitorVisit.service.js';
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
+import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
 
 export const movementsModule = { key: 'movements', status: 'in_progress' } as const;
 export const movementsRouter = Router();
@@ -90,6 +91,14 @@ movementsRouter.post('/visitors/:id/exit', async (req, res, next) => {
     const auth = typeof req.auth === 'object' ? req.auth : undefined;
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
     res.json({ data: await registerVisitorExit(req.params.id, auth.sub) });
+  } catch (error) { next(error); }
+});
+
+movementsRouter.post('/visitor-vehicles/entry', async (req, res, next) => {
+  try {
+    const auth = typeof req.auth === 'object' ? req.auth : undefined;
+    if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
+    res.status(201).json({ data: await registerVisitorVehicleEntry({ plate: req.body?.plate, occupants: req.body?.occupants, userId: auth.sub }) });
   } catch (error) { next(error); }
 });
 
