@@ -150,7 +150,7 @@ movementsRouter.post('/institutional-vehicles/departure/resolve', async (req, re
 movementsRouter.post('/institutional-vehicles/departure', async (req, res, next) => {
   try {
     const auth = typeof req.auth === 'object' ? req.auth : undefined; if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
-    if (typeof req.body?.plate !== 'string' || typeof req.body?.soinNumber !== 'string' || typeof req.body?.driverEmployeeId !== 'string' || typeof req.body?.destination !== 'string' || !Array.isArray(req.body?.occupantEmployeeIds)) throw new ApiError(400, 'Datos de salida incompletos');
+    if (typeof req.body?.plate !== 'string' || typeof req.body?.soinNumber !== 'string' || typeof req.body?.driverEmployeeId !== 'string' || typeof req.body?.destination !== 'string' || !Array.isArray(req.body?.occupantEmployeeIds) || (req.body?.assets !== undefined && !Array.isArray(req.body.assets))) throw new ApiError(400, 'Datos de salida incompletos');
     res.status(201).json({ data: await createInstitutionalDeparture({ ...req.body, userId: auth.sub }) });
   } catch (error) { next(error); }
 });
