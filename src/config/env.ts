@@ -18,5 +18,6 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   bunnyStorageZone: process.env.BUNNY_STORAGE_ZONE,
   bunnyStorageAccessKey: process.env.BUNNY_STORAGE_ACCESS_KEY,
+  bunnyStorageEndpoint: process.env.BUNNY_STORAGE_ENDPOINT ?? 'storage.bunnycdn.com',
   bunnyCdnHostname: process.env.BUNNY_CDN_HOSTNAME,
 } as const;

@@ -10,6 +10,7 @@ vi.mock('../../config/env.js', () => ({
   env: {
     bunnyStorageZone: 'test-zone',
     bunnyStorageAccessKey: 'test-key',
+    bunnyStorageEndpoint: 'ny.storage.bunnycdn.com',
     bunnyCdnHostname: 'cdn.example.test',
   },
 }));
@@ -64,7 +65,7 @@ describe('uploadMovementPhoto', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('https://storage.bunnycdn.com/test-zone/movimientos/'),
+      expect.stringContaining('https://ny.storage.bunnycdn.com/test-zone/movimientos/'),
       expect.objectContaining({ method: 'PUT', headers: expect.objectContaining({ AccessKey: 'test-key' }) }),
     );
     expect(queryMock).toHaveBeenCalledTimes(2);

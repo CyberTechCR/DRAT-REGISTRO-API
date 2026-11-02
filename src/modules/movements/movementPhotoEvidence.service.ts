@@ -26,7 +26,8 @@ export async function uploadMovementPhoto(input: { movementType: PhotoMovementTy
   if (plate.length < 3) throw new ApiError(400, 'Placa inválida para la evidencia');
   const extension = input.contentType === 'image/png' ? 'png' : input.contentType === 'image/webp' ? 'webp' : 'jpg';
   const storagePath = `movimientos/${input.movementType.toLowerCase()}/${input.movementId}/${Date.now()}-${plate}.${extension}`;
-  const uploadUrl = `https://storage.bunnycdn.com/${encodeURIComponent(env.bunnyStorageZone)}/${storagePath}`;
+  const storageEndpoint = env.bunnyStorageEndpoint.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const uploadUrl = `https://${storageEndpoint}/${encodeURIComponent(env.bunnyStorageZone)}/${storagePath}`;
   let response: Response;
   try { response = await fetch(uploadUrl, { method: 'PUT', headers: { AccessKey: env.bunnyStorageAccessKey, 'Content-Type': input.contentType }, body: new Uint8Array(input.image) }); }
   catch { throw new ApiError(502, 'No fue posible conectar con el almacenamiento fotográfico. El movimiento quedó registrado y la evidencia puede reintentarse'); }
