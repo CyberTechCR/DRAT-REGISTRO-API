@@ -12,6 +12,8 @@ export class EmployeeMovement extends Model<InferAttributes<EmployeeMovement>, I
   declare movementType: MovementType;
   declare source: MovementSource;
   declare confirmedByUserId: string;
+  declare clientOperationId: CreationOptional<string | null>;
+  declare clientOccurredAt: CreationOptional<Date | null>;
   declare occurredAt: CreationOptional<Date>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -27,6 +29,8 @@ export function getEmployeeMovementModel() {
       movementType: { type: DataTypes.STRING(10), allowNull: false, field: 'movement_type' },
       source: { type: DataTypes.STRING(20), allowNull: false },
       confirmedByUserId: { type: DataTypes.UUID, allowNull: false, field: 'confirmed_by_user_id' },
+      clientOperationId: { type: DataTypes.STRING(64), allowNull: true, unique: true, field: 'client_operation_id' },
+      clientOccurredAt: { type: DataTypes.DATE, allowNull: true, field: 'client_occurred_at' },
       occurredAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW, field: 'occurred_at' },
       createdAt: DataTypes.DATE,
       updatedAt: DataTypes.DATE,

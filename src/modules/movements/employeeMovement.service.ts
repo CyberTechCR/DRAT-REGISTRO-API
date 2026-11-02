@@ -23,7 +23,28 @@ type CreatedMovementResult = {
   confirmedByUserId: string;
   occurredAt: Date;
   employee: { id: string; identification: string; name: string };
+  duplicate?: boolean;
 };
+
+type OfflineMetadata = { clientOperationId?: string; clientOccurredAt?: string };
+
+function validateOfflineMetadata(input: OfflineMetadata) {
+  if (!input.clientOperationId) return { clientOperationId: null, clientOccurredAt: null };
+  const operationId = input.clientOperationId.trim();
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(operationId)) throw new ApiError(400, 'Identificador local inválido');
+  const occurredAt = new Date(input.clientOccurredAt ?? '');
+  if (Number.isNaN(occurredAt.getTime()) || occurredAt.getTime() > Date.now() + 300000) throw new ApiError(400, 'Fecha local inválida');
+  return { clientOperationId: operationId, clientOccurredAt: occurredAt };
+}
+
+async function existingOfflineMovement(operationId: string | null, transaction: Transaction): Promise<CreatedMovementResult | null> {
+  if (!operationId) return null;
+  const movement = await getEmployeeMovementModel().findOne({ where: { clientOperationId: operationId }, transaction });
+  if (!movement) return null;
+  const employee = await getEmployeeModel().findByPk(movement.employeeId, { transaction });
+  if (!employee) throw new ApiError(409, 'El movimiento sincronizado no tiene un funcionario válido');
+  return { id: movement.id, employeeId: movement.employeeId, nfcTagId: movement.nfcTagId, movementType: movement.movementType, source: movement.source, confirmedByUserId: movement.confirmedByUserId, occurredAt: movement.occurredAt, employee: { id: employee.id, identification: employee.identification, name: employee.name }, duplicate: true };
+}
 
 async function resolve(code: string, transaction?: Transaction) {
   const tag = await getNfcTagModel().findOne({ where: { code: normalizeNfcCode(code) }, transaction, lock: transaction?.LOCK.UPDATE });
@@ -57,11 +78,13 @@ export async function resolveNfcMovement(code: string): Promise<ResolutionResult
   };
 }
 
-export async function createNfcMovement(input: { code: string; movementType: MovementType; source: MovementSource; confirmedByUserId: string }): Promise<CreatedMovementResult> {
+export async function createNfcMovement(input: { code: string; movementType: MovementType; source: MovementSource; confirmedByUserId: string } & OfflineMetadata): Promise<CreatedMovementResult> {
+  const metadata = validateOfflineMetadata(input);
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
+    const existing = await existingOfflineMovement(metadata.clientOperationId, transaction); if (existing) return existing;
     const { tag, employee, proposedMovement } = await resolve(input.code, transaction);
     if (input.movementType !== proposedMovement) throw new ApiError(409, `El funcionario ya figura ${proposedMovement === 'SALIDA' ? 'dentro' : 'fuera'}; no puede registrar otro ${input.movementType.toLowerCase()} normal`, { code: 'MOVEMENT_INCONSISTENCY', entityType: 'FUNCIONARIO', entityId: employee.id, requestedMovement: input.movementType, authorizedRoute: 'Un administrador puede registrar una contingencia con motivo obligatorio' });
-    const movement = await getEmployeeMovementModel().create({ employeeId: employee.id, nfcTagId: tag.id, movementType: proposedMovement, source: input.source, confirmedByUserId: input.confirmedByUserId }, { transaction });
+    const movement = await getEmployeeMovementModel().create({ employeeId: employee.id, nfcTagId: tag.id, movementType: proposedMovement, source: input.source, confirmedByUserId: input.confirmedByUserId, clientOperationId: metadata.clientOperationId, clientOccurredAt: metadata.clientOccurredAt, ...(metadata.clientOccurredAt ? { occurredAt: metadata.clientOccurredAt } : {}) }, { transaction });
     return {
       id: movement.id,
       employeeId: movement.employeeId,
@@ -84,13 +107,15 @@ export async function resolveManualMovement(employeeId: string): Promise<Omit<Re
   };
 }
 
-export async function createManualMovement(input: { employeeId: string; movementType: MovementType; reason: string; confirmedByUserId: string }): Promise<CreatedMovementResult> {
+export async function createManualMovement(input: { employeeId: string; movementType: MovementType; reason: string; confirmedByUserId: string } & OfflineMetadata): Promise<CreatedMovementResult> {
   const reason = input.reason?.trim();
   if (!reason || reason.length < 10 || reason.length > 500) throw new ApiError(400, 'El motivo de uso manual debe tener entre 10 y 500 caracteres');
+  const metadata = validateOfflineMetadata(input);
   return requireDatabase().transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (transaction) => {
+    const existing = await existingOfflineMovement(metadata.clientOperationId, transaction); if (existing) return existing;
     const { employee, proposedMovement } = await resolveEmployee(input.employeeId, transaction);
     if (input.movementType !== proposedMovement) throw new ApiError(409, `El funcionario ya figura ${proposedMovement === 'SALIDA' ? 'dentro' : 'fuera'}; no puede registrar otro ${input.movementType.toLowerCase()} normal`, { code: 'MOVEMENT_INCONSISTENCY', entityType: 'FUNCIONARIO', entityId: employee.id, requestedMovement: input.movementType, authorizedRoute: 'Un administrador puede registrar una contingencia con motivo obligatorio' });
-    const movement = await getEmployeeMovementModel().create({ employeeId: employee.id, nfcTagId: null, movementType: proposedMovement, source: 'BUSQUEDA_MANUAL', confirmedByUserId: input.confirmedByUserId }, { transaction });
+    const movement = await getEmployeeMovementModel().create({ employeeId: employee.id, nfcTagId: null, movementType: proposedMovement, source: 'BUSQUEDA_MANUAL', confirmedByUserId: input.confirmedByUserId, clientOperationId: metadata.clientOperationId, clientOccurredAt: metadata.clientOccurredAt, ...(metadata.clientOccurredAt ? { occurredAt: metadata.clientOccurredAt } : {}) }, { transaction });
     await requireDatabase().query('INSERT INTO manual_movement_reviews(employee_movement_id,reason) VALUES(:movementId,:reason)', { replacements: { movementId: movement.id, reason }, type: QueryTypes.INSERT, transaction });
     return { id: movement.id, employeeId: movement.employeeId, nfcTagId: null, movementType: movement.movementType, source: movement.source, confirmedByUserId: movement.confirmedByUserId, occurredAt: movement.occurredAt, employee: { id: employee.id, identification: employee.identification, name: employee.name } };
   });

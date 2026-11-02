@@ -31,7 +31,7 @@ movementsRouter.post('/employees/nfc', async (req, res, next) => {
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
     if (!['INGRESO', 'SALIDA'].includes(req.body?.movementType)) throw new ApiError(400, 'Tipo de movimiento inválido');
     if (!['NFC_SIMULADO', 'NFC_FISICO'].includes(req.body?.source)) throw new ApiError(400, 'Origen del movimiento inválido');
-    res.status(201).json({ data: await createNfcMovement({ code: req.body.code, movementType: req.body.movementType as MovementType, source: req.body.source as MovementSource, confirmedByUserId: auth.sub }) });
+    res.status(201).json({ data: await createNfcMovement({ code: req.body.code, movementType: req.body.movementType as MovementType, source: req.body.source as MovementSource, confirmedByUserId: auth.sub, clientOperationId: req.body.clientOperationId, clientOccurredAt: req.body.clientOccurredAt }) });
   } catch (error) { next(error); }
 });
 
@@ -48,7 +48,7 @@ movementsRouter.post('/employees/manual', async (req, res, next) => {
     if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
     if (typeof req.body?.employeeId !== 'string') throw new ApiError(400, 'Funcionario requerido');
     if (!['INGRESO', 'SALIDA'].includes(req.body?.movementType)) throw new ApiError(400, 'Tipo de movimiento inválido');
-    res.status(201).json({ data: await createManualMovement({ employeeId: req.body.employeeId, movementType: req.body.movementType as MovementType, reason: req.body.reason, confirmedByUserId: auth.sub }) });
+    res.status(201).json({ data: await createManualMovement({ employeeId: req.body.employeeId, movementType: req.body.movementType as MovementType, reason: req.body.reason, confirmedByUserId: auth.sub, clientOperationId: req.body.clientOperationId, clientOccurredAt: req.body.clientOccurredAt }) });
   } catch (error) { next(error); }
 });
 movementsRouter.get('/employees/manual/reviews/pending', authorize('ADMINISTRADOR'), async (_req, res, next) => {
