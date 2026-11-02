@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { raw, Router } from 'express';
 
 import { ApiError } from '../../errors/ApiError.js';
 import { authenticate } from '../../middleware/authenticate.js';
@@ -12,11 +12,25 @@ import { listActiveVisitorVisits, listAvailableVisitorBadges, listPendingBadgeRe
 import { listMovementHistory, validateHistoryFilters } from './movementHistory.service.js';
 import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
 import { createPermanentProviderMovement, resolvePermanentProviderMovement } from './permanentProviderMovement.service.js';
+import { uploadMovementPhoto, type PhotoMovementType } from './movementPhotoEvidence.service.js';
 
 export const movementsModule = { key: 'movements', status: 'in_progress' } as const;
 export const movementsRouter = Router();
 
 movementsRouter.use(authenticate, authorize('ADMINISTRADOR', 'GUARDA'));
+
+movementsRouter.post('/evidence/photos', raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), async (req, res, next) => {
+  try {
+    const auth = typeof req.auth === 'object' ? req.auth : undefined;
+    if (typeof auth?.sub !== 'string') throw new ApiError(401, 'No autorizado');
+    if (!Buffer.isBuffer(req.body)) throw new ApiError(400, 'Fotografía requerida');
+    const movementType = req.query.movementType;
+    const movementId = req.query.movementId;
+    const plate = req.query.plate;
+    if (typeof movementType !== 'string' || typeof movementId !== 'string' || typeof plate !== 'string') throw new ApiError(400, 'Referencia del movimiento incompleta');
+    res.status(201).json({ data: await uploadMovementPhoto({ movementType: movementType as PhotoMovementType, movementId, plate, contentType: req.headers['content-type'] ?? '', image: req.body, userId: auth.sub }) });
+  } catch (error) { next(error); }
+});
 
 movementsRouter.post('/employees/nfc/resolve', async (req, res, next) => {
   try {

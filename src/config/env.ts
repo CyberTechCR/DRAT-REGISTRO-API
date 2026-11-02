@@ -16,4 +16,7 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '8h',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  bunnyStorageZone: process.env.BUNNY_STORAGE_ZONE,
+  bunnyStorageAccessKey: process.env.BUNNY_STORAGE_ACCESS_KEY,
+  bunnyCdnHostname: process.env.BUNNY_CDN_HOSTNAME,
 } as const;
