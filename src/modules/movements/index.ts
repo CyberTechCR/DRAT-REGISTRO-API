@@ -14,6 +14,7 @@ import { registerVisitorVehicleEntry } from './visitorVehicleVisit.service.js';
 import { createPermanentProviderMovement, resolvePermanentProviderMovement } from './permanentProviderMovement.service.js';
 import { uploadMovementPhoto, type PhotoMovementType } from './movementPhotoEvidence.service.js';
 import { generateVehiclePlateReport, validateVehiclePlateReportFilters } from './vehiclePlateReport.service.js';
+import { getDashboardSummary } from './dashboard.service.js';
 
 export const movementsModule = { key: 'movements', status: 'in_progress' } as const;
 export const movementsRouter = Router();
@@ -97,6 +98,10 @@ movementsRouter.get('/history', authorize('ADMINISTRADOR'), async (req, res, nex
 movementsRouter.get('/reports/vehicles', authorize('ADMINISTRADOR'), async (req, res, next) => {
   try { res.json({ data: await generateVehiclePlateReport(validateVehiclePlateReportFilters(req.query)) }); }
   catch (error) { next(error); }
+});
+
+movementsRouter.get('/dashboard', authorize('ADMINISTRADOR'), async (_req, res, next) => {
+  try { res.json({ data: await getDashboardSummary() }); } catch (error) { next(error); }
 });
 
 movementsRouter.post('/visitors/entry', async (req, res, next) => {
